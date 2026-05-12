@@ -43,5 +43,6 @@ format = "ruff format remote_iface tests"
 format-check = "ruff format --check remote_iface tests"
 typecheck = "mypy remote_iface"
 build = "hatchling build"
+check-commlib-isolation = "bash scripts/check_commlib_isolation.sh"
 quality = { depends-on = ["lint", "format-check"] }
-check = { depends-on = ["quality", "typecheck", "test"] }
+check = { depends-on = ["check-commlib-isolation", "quality", "typecheck", "test"] }
