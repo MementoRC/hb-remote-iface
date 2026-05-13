@@ -35,6 +35,19 @@ jobs:
       package-path: "."
       allowed-licenses: "MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, PSF-2.0, LGPL-3.0"
 
+  commlib-isolation:
+    name: "Verify commlib Isolation"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.4
+        with:
+          environments: ci
+      - name: Verify commlib isolation
+        run: bash scripts/check_commlib_isolation.sh
+
   branch-policy:
     name: "Branch Policy"
     runs-on: ubuntu-latest
