@@ -24,7 +24,8 @@ def test_gateway_config_default_construction() -> None:
     assert cfg.enable_events is True
     assert cfg.enable_external_events is True
     assert cfg.enable_log_handler is True
-    assert cfg.health_check_interval == 1.0
+    assert cfg.health_check_interval == 10.0
+    assert cfg.consecutive_failure_threshold == 3
     assert cfg.restart_short_delay == 5.0
     assert cfg.restart_long_delay == 10.0
     assert cfg.external_event_queue_size == 1000
@@ -174,3 +175,28 @@ def test_gateway_config_exported_from_package() -> None:
     from remote_iface.protocols import GatewayConfig as Exported
 
     assert Exported is GatewayConfig
+
+
+# ---------------------------------------------------------------------------
+# consecutive_failure_threshold field
+# ---------------------------------------------------------------------------
+
+
+def test_consecutive_failure_threshold_default() -> None:
+    cfg = GatewayConfig()
+    assert cfg.consecutive_failure_threshold == 3
+
+
+def test_consecutive_failure_threshold_custom() -> None:
+    cfg = GatewayConfig(consecutive_failure_threshold=5)
+    assert cfg.consecutive_failure_threshold == 5
+
+
+def test_consecutive_failure_threshold_zero_rejected() -> None:
+    with pytest.raises(ValidationError):
+        GatewayConfig(consecutive_failure_threshold=0)
+
+
+def test_consecutive_failure_threshold_negative_rejected() -> None:
+    with pytest.raises(ValidationError):
+        GatewayConfig(consecutive_failure_threshold=-1)
