@@ -44,7 +44,8 @@ class GatewayConfig(BaseModel):
     enable_log_handler: bool = True
 
     # Timing / connection management
-    health_check_interval: float = 1.0
+    health_check_interval: float = 10.0
+    consecutive_failure_threshold: int = Field(default=3, gt=0)
     restart_short_delay: float = 5.0
     restart_long_delay: float = 10.0
 
