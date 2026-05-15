@@ -162,3 +162,11 @@ class HummingbotAppProtocol(Protocol):
         Listeners are invoked by adapter code when a status broadcast is triggered.
         """
         ...
+
+    def register_strategy_loaded_callback(self, callback: Callable[[], None]) -> None:
+        """Register a callback to be invoked once a strategy is fully loaded and ready."""
+        ...
+
+    def handle_external_event(self, event: object) -> None:
+        """Dispatch an external event received from the MQTT bus into the application."""
+        ...

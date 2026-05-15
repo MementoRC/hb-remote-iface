@@ -39,6 +39,7 @@ class GatewayConfig(BaseModel):
     # Feature toggles — default ON, matching upstream behaviour
     enable_commands: bool = True
     enable_notifier: bool = True
+    enable_status_updates: bool = True
     enable_events: bool = True
     enable_external_events: bool = True
     enable_log_handler: bool = True

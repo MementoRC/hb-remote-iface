@@ -5,7 +5,15 @@ the MQTT and RPC interface layer for hummingbot as a standalone sub-package.
 """
 
 from remote_iface.__about__ import __version__
-from remote_iface.gateway import MQTTCommands, MQTTGateway
+from remote_iface.gateway import (
+    MQTTCommands,
+    MQTTExternalEvents,
+    MQTTGateway,
+    MQTTLogHandler,
+    MQTTMarketEventForwarder,
+    MQTTNotifier,
+    MQTTStatusUpdates,
+)
 from remote_iface.protocols import (
     BrokerConfig,
     GatewayConfig,
@@ -19,6 +27,11 @@ __all__ = [
     "GatewayConfig",
     "HummingbotAppProtocol",
     "MQTTCommands",
+    "MQTTExternalEvents",
     "MQTTGateway",
+    "MQTTLogHandler",
+    "MQTTMarketEventForwarder",
+    "MQTTNotifier",
+    "MQTTStatusUpdates",
     "MQTTStatusCode",
 ]

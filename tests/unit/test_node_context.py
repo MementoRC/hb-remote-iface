@@ -217,6 +217,43 @@ def test_stop_continues_after_one_wrapper_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# is_healthy tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_healthy_returns_false_when_node_not_started() -> None:
+    ctx = _make_context()
+    assert ctx.is_healthy() is False
+
+
+def test_is_healthy_returns_true_when_node_health_is_true() -> None:
+    mock_node = _make_mock_node()
+    mock_node.health = True
+    ctx = _make_context()
+    _start_with_mock(mock_node, ctx)
+    try:
+        assert ctx.is_healthy() is True
+    finally:
+        ctx.stop()
+
+
+def test_is_healthy_returns_false_when_node_health_is_false() -> None:
+    mock_node = _make_mock_node()
+    mock_node.health = False
+    ctx = _make_context()
+    _start_with_mock(mock_node, ctx)
+    try:
+        assert ctx.is_healthy() is False
+    finally:
+        ctx.stop()
+
+
+# ---------------------------------------------------------------------------
+# Idempotency
+# ---------------------------------------------------------------------------
+
+
 def test_idempotent_start_and_stop() -> None:
     mock_node = _make_mock_node()
     ctx = _make_context()
