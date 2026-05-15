@@ -16,7 +16,7 @@ from remote_iface.protocols.app import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from typing import Any
 
     from remote_iface.protocols.notifier import NotifierProtocol
@@ -114,6 +114,12 @@ class _StubApp:
 
     def register_status_listener(self, callback: StatusListener) -> UnsubscribeCallable:
         return _noop_unsubscribe
+
+    def register_strategy_loaded_callback(self, callback: Callable[[], None]) -> None:
+        pass
+
+    def handle_external_event(self, event: object) -> None:
+        pass
 
 
 class _BadApp:

@@ -216,6 +216,4 @@ class MQTTGateway:
 
     async def is_healthy(self) -> bool:
         """Delegate health check to the underlying NodeContext."""
-        if self._node_context._node is None:  # noqa: SLF001
-            return False
-        return bool(self._node_context._node.health)  # noqa: SLF001
+        return self._node_context.is_healthy()

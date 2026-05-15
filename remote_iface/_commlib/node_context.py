@@ -240,6 +240,10 @@ class NodeContext:
         self._pending_subscribers.clear()
         self._pending_rpc_services.clear()
 
+    def is_healthy(self) -> bool:
+        """True if the underlying commlib node reports healthy connection state."""
+        return bool(getattr(self._node, "health", False))
+
     def _bind_subscriber(
         self,
         wrapper: Subscriber,

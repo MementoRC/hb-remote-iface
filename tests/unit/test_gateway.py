@@ -43,12 +43,11 @@ def _make_gateway(
     return gw, app
 
 
-def _mock_node_context() -> MagicMock:
+def _mock_node_context(healthy: bool = True) -> MagicMock:
     nc = MagicMock()
     nc.start = MagicMock()
     nc.stop = MagicMock()
-    nc._node = MagicMock()
-    nc._node.health = True
+    nc.is_healthy = MagicMock(return_value=healthy)
     return nc
 
 
@@ -251,10 +250,8 @@ async def test_health_loop_cancelled_error_exits_cleanly() -> None:
 
 async def test_health_loop_resets_failure_counter_on_success() -> None:
     gw, _ = _make_gateway(health_check_interval=0.02, consecutive_failure_threshold=3)
-    gw._node_context = _mock_node_context()
+    gw._node_context = _mock_node_context(healthy=True)
     gw._consecutive_failures = 2  # pre-set
-    # Node is healthy — next tick should reset to 0.
-    gw._node_context._node.health = True
     await gw.start()
     await asyncio.sleep(0.06)  # allow 2-3 health checks
     assert gw._consecutive_failures == 0
@@ -263,9 +260,7 @@ async def test_health_loop_resets_failure_counter_on_success() -> None:
 
 async def test_health_loop_triggers_restart_at_threshold() -> None:
     gw, _ = _make_gateway(health_check_interval=0.02, consecutive_failure_threshold=2)
-    gw._node_context = _mock_node_context()
-    # Force unhealthy node.
-    gw._node_context._node.health = False
+    gw._node_context = _mock_node_context(healthy=False)
 
     restart_called = False
 
@@ -273,7 +268,7 @@ async def test_health_loop_triggers_restart_at_threshold() -> None:
         nonlocal restart_called
         restart_called = True
         # Make node healthy so loop doesn't keep restarting.
-        gw._node_context._node.health = True
+        gw._node_context.is_healthy.return_value = True
         gw._running = True  # keep alive after "restart"
         gw._consecutive_failures = 0
 
@@ -286,8 +281,7 @@ async def test_health_loop_triggers_restart_at_threshold() -> None:
 
 async def test_health_loop_increments_failure_counter() -> None:
     gw, _ = _make_gateway(health_check_interval=0.02, consecutive_failure_threshold=100)
-    gw._node_context = _mock_node_context()
-    gw._node_context._node.health = False
+    gw._node_context = _mock_node_context(healthy=False)
 
     await gw.start()
     await asyncio.sleep(0.07)  # ~3 ticks
@@ -311,21 +305,15 @@ async def test_is_running_reflects_state() -> None:
     assert gw.is_running() is False
 
 
-async def test_is_healthy_returns_false_when_node_is_none() -> None:
+async def test_is_healthy_delegates_to_node_context() -> None:
     gw, _ = _make_gateway()
-    gw._node_context = _mock_node_context()
-    gw._node_context._node = None
-    result = await gw.is_healthy()
-    assert result is False
-
-
-async def test_is_healthy_delegates_to_node() -> None:
-    gw, _ = _make_gateway()
-    gw._node_context = _mock_node_context()
-    gw._node_context._node.health = True
+    nc = _mock_node_context()
+    nc.is_healthy = MagicMock(return_value=True)
+    gw._node_context = nc
     assert await gw.is_healthy() is True
-    gw._node_context._node.health = False
+    nc.is_healthy.return_value = False
     assert await gw.is_healthy() is False
+    assert nc.is_healthy.call_count == 2
 
 
 # ---------------------------------------------------------------------------
