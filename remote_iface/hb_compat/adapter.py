@@ -18,17 +18,18 @@ Method breakdown (22 total):
 from __future__ import annotations
 
 import asyncio
-import logging
+import contextlib
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
-from remote_iface.protocols.app import (
-    MarketEventCallback,
-    StatusListener,
-    UnsubscribeCallable,
-)
-
 if TYPE_CHECKING:
+    import logging
+
+    from remote_iface.protocols.app import (
+        MarketEventCallback,
+        StatusListener,
+        UnsubscribeCallable,
+    )
     from remote_iface.protocols.notifier import NotifierProtocol
 
 ExternalEventCallback = Callable[[object], None]
@@ -180,10 +181,8 @@ class HummingbotAppAdapter:
         self._market_event_callbacks.append(callback)
 
         def _unsubscribe() -> None:
-            try:
+            with contextlib.suppress(ValueError):
                 self._market_event_callbacks.remove(callback)
-            except ValueError:
-                pass
 
         return _unsubscribe
 
@@ -192,10 +191,8 @@ class HummingbotAppAdapter:
         self._status_listeners.append(callback)
 
         def _unsubscribe() -> None:
-            try:
+            with contextlib.suppress(ValueError):
                 self._status_listeners.remove(callback)
-            except ValueError:
-                pass
 
         return _unsubscribe
 
@@ -222,14 +219,10 @@ class HummingbotAppAdapter:
         AttributeError so the adapter works with minimal host implementations).
         """
         for handler in list(self._external_event_handlers):
-            try:
+            with contextlib.suppress(Exception):  # noqa: BLE001
                 handler(event)
-            except Exception:  # noqa: BLE001
-                pass
         # Best-effort forward to host app (host may or may not support this).
         host_method = getattr(self._app, "handle_external_event", None)
         if host_method is not None:
-            try:
+            with contextlib.suppress(Exception):  # noqa: BLE001
                 host_method(event)
-            except Exception:  # noqa: BLE001
-                pass

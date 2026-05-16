@@ -55,7 +55,7 @@ def create_gateway(
     )
 
     if resolved_config.enable_commands:
-        gateway.add_component(MQTTCommands())
+        gateway.add_component(MQTTCommands(adapter))
     if resolved_config.enable_notifier:
         gateway.add_component(MQTTNotifier())
     if resolved_config.enable_status_updates:

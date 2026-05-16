@@ -141,7 +141,9 @@ def test_create_gateway_single_toggle_off_excludes_component(
     config = GatewayConfig(**{toggle: False})
     gw = create_gateway(_make_mock_app(), config=config)
     types = _component_types(gw)
-    assert excluded_type not in types, f"{excluded_type.__name__} should be absent when {toggle}=False"
+    assert excluded_type not in types, (
+        f"{excluded_type.__name__} should be absent when {toggle}=False"
+    )
     assert len(gw._components) == _TOTAL_COMPONENTS - 1
 
 
