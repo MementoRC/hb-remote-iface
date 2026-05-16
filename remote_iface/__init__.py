@@ -14,6 +14,7 @@ from remote_iface.gateway import (
     MQTTNotifier,
     MQTTStatusUpdates,
 )
+from remote_iface.hb_compat import HummingbotAppAdapter, create_gateway
 from remote_iface.protocols import (
     BrokerConfig,
     GatewayConfig,
@@ -25,6 +26,7 @@ __all__ = [
     "__version__",
     "BrokerConfig",
     "GatewayConfig",
+    "HummingbotAppAdapter",
     "HummingbotAppProtocol",
     "MQTTCommands",
     "MQTTExternalEvents",
@@ -34,4 +36,5 @@ __all__ = [
     "MQTTNotifier",
     "MQTTStatusUpdates",
     "MQTTStatusCode",
+    "create_gateway",
 ]
