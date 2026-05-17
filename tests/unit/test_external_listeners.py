@@ -27,8 +27,8 @@ def _mock_gateway(namespace: str = "hbot", instance_id: str = "bot1") -> MagicMo
     gw.topic_for.side_effect = lambda topic, bot_prefix=True: (
         f"{namespace}/{instance_id}/{topic.lstrip('/')}" if bot_prefix else topic.lstrip("/")
     )
-    # create_subscriber returns a new Mock so stop() can be asserted on it
-    gw._node_context.create_subscriber = MagicMock(side_effect=lambda **kw: MagicMock())
+    # create_subscriber returns a single reusable Mock so return_value tracks stop() calls
+    gw._node_context.create_subscriber = MagicMock()
     return gw
 
 
@@ -53,7 +53,7 @@ class TestETopicListenerConstruction:
         assert call_kwargs["topic"] == "test"
 
     def test_construction_with_prefix_uses_prefixed_topic(self) -> None:
-        """ETopicListener subscribes to {namespace}/{instance_id}/{topic} when use_bot_prefix=True."""
+        """ETopicListener subscribes to {ns}/{iid}/{topic} when use_bot_prefix=True."""
 
         def clb(msg: object, topic: str) -> None:
             pass
@@ -118,9 +118,7 @@ class TestETopicListenerDispatch:
         # Must not raise
         listener._dispatch({"data": 1})
 
-    def test_dispatch_exception_logged_as_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_dispatch_exception_logged_as_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Callback exceptions produce a WARNING log entry."""
 
         def bad_clb(msg: object, topic: str) -> None:

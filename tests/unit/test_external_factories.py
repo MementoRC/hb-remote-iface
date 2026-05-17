@@ -39,8 +39,8 @@ def _mock_gateway(namespace: str = "hbot", instance_id: str = "bot1") -> MagicMo
     gw.topic_for.side_effect = lambda topic, bot_prefix=True: (
         f"{namespace}/{instance_id}/{topic.lstrip('/')}" if bot_prefix else topic.lstrip("/")
     )
-    gw._node_context.create_subscriber = MagicMock(side_effect=lambda **kw: MagicMock())
-    gw._node_context.create_publisher = MagicMock(side_effect=lambda **kw: MagicMock())
+    gw._node_context.create_subscriber = MagicMock()
+    gw._node_context.create_publisher = MagicMock()
     return gw
 
 
@@ -238,9 +238,7 @@ class TestEEventListenerFactory:
         # Must not raise
         on_message({"x": 1})
 
-    def test_remove_is_noop_and_emits_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_remove_is_noop_and_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """EEventListenerFactory.remove() is documented as a no-op due to commlib limitation.
 
         The method MUST:
@@ -254,7 +252,9 @@ class TestEEventListenerFactory:
         with caplog.at_level("WARNING", logger="remote_iface.external.events"):
             EEventListenerFactory.remove(gw, "myevent", _noop_clb)
         assert len(caplog.records) >= 1
-        assert any("unsubscribe" in r.message or "not supported" in r.message for r in caplog.records)
+        assert any(
+            "unsubscribe" in r.message or "not supported" in r.message for r in caplog.records
+        )
 
     def test_remove_does_not_raise(self) -> None:
         """remove() must complete without raising regardless of state."""

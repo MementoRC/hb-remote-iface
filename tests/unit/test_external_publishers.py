@@ -7,7 +7,7 @@ _mock_gateway() — no real MQTT broker required.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,8 +29,8 @@ def _mock_gateway(namespace: str = "hummingbot", instance_id: str = "test-bot") 
     gw.topic_for.side_effect = lambda topic, bot_prefix=True: (
         f"{namespace}/{instance_id}/{topic.lstrip('/')}" if bot_prefix else topic.lstrip("/")
     )
-    # create_publisher returns a fresh Mock each call (distinct commlib publisher per topic)
-    gw._node_context.create_publisher = MagicMock(side_effect=lambda **kw: MagicMock())
+    # create_publisher returns a single reusable Mock so return_value tracks publish calls
+    gw._node_context.create_publisher = MagicMock()
     return gw
 
 
@@ -44,9 +44,7 @@ class TestETopicPublisher:
         """ETopicPublisher.__init__ creates exactly one commlib publisher."""
         gw = _mock_gateway()
         ETopicPublisher(gw, "foo/bar", use_bot_prefix=False)
-        gw._node_context.create_publisher.assert_called_once_with(
-            topic="foo/bar", msg_type=dict
-        )
+        gw._node_context.create_publisher.assert_called_once_with(topic="foo/bar", msg_type=dict)
 
     def test_send_publishes_to_correct_topic_no_prefix(self) -> None:
         """With use_bot_prefix=False the raw topic is used."""
@@ -58,9 +56,7 @@ class TestETopicPublisher:
         commlib_pub = gw._node_context.create_publisher.return_value
         commlib_pub.publish.assert_called_once_with(msg)
         # Topic passed to create_publisher must be the raw string
-        gw._node_context.create_publisher.assert_called_once_with(
-            topic="test/a/b", msg_type=dict
-        )
+        gw._node_context.create_publisher.assert_called_once_with(topic="test/a/b", msg_type=dict)
 
     def test_send_publishes_to_prefixed_topic_with_bot_prefix(self) -> None:
         """With use_bot_prefix=True the topic is {namespace}/{instance_id}/{topic}."""
@@ -109,9 +105,7 @@ class TestEMTopicPublisher:
         pub = EMTopicPublisher(gw, use_bot_prefix=False)
         msg = {"a": "test"}
         pub.send("test/a/b", msg)
-        gw._node_context.create_publisher.assert_called_once_with(
-            topic="test/a/b", msg_type=dict
-        )
+        gw._node_context.create_publisher.assert_called_once_with(topic="test/a/b", msg_type=dict)
         gw._node_context.create_publisher.return_value.publish.assert_called_once_with(msg)
 
     def test_send_with_prefix_prefixes_topic(self) -> None:
