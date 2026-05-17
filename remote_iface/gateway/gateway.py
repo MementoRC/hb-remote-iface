@@ -210,6 +210,11 @@ class MQTTGateway:
     # State accessors
     # ------------------------------------------------------------------
 
+    @property
+    def app(self) -> HummingbotAppProtocol:
+        """Public accessor for the application adapter."""
+        return self._app
+
     def is_running(self) -> bool:
         """Return True if the gateway has been started and not yet stopped."""
         return self._running
@@ -217,3 +222,14 @@ class MQTTGateway:
     async def is_healthy(self) -> bool:
         """Delegate health check to the underlying NodeContext."""
         return self._node_context.is_healthy()
+
+    def topic_for(self, topic: str, *, bot_prefix: bool) -> str:
+        """Compose an MQTT topic, optionally prefixing with namespace+instance_id.
+
+        When bot_prefix=True, returns "{namespace}/{instance_id}/{topic}" (matching
+        upstream's TopicSpecs.PREFIX format). When False, returns topic as-is.
+        Leading slashes on `topic` are stripped to avoid double-slashes.
+        """
+        if bot_prefix:
+            return f"{self._config.namespace}/{self._app.instance_id}/{topic.lstrip('/')}"
+        return topic

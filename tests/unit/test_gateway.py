@@ -327,3 +327,34 @@ def test_make_node_context_produces_node_context() -> None:
     nc = _make_node_context(BrokerConfig(), "test-ns")
     assert isinstance(nc, NodeContext)
     assert nc._node_name == "test-ns"
+
+
+# ---------------------------------------------------------------------------
+# app property and topic_for tests (Phase 5.5 commit 1)
+# ---------------------------------------------------------------------------
+
+
+def test_gateway_app_property_returns_adapter() -> None:
+    """gateway.app exposes the underlying HummingbotAppProtocol."""
+    gw, _ = _make_gateway()
+    assert gw.app is gw._app
+
+
+@pytest.mark.parametrize(
+    "topic,bot_prefix,expected_pattern",
+    [
+        ("foo", False, "foo"),
+        ("foo/bar", False, "foo/bar"),
+        ("foo", True, "{ns}/{iid}/foo"),
+        ("/foo", True, "{ns}/{iid}/foo"),
+        ("foo/bar/baz", True, "{ns}/{iid}/foo/bar/baz"),
+    ],
+)
+def test_gateway_topic_for_prefix_modes(
+    topic: str, bot_prefix: bool, expected_pattern: str
+) -> None:
+    """topic_for respects bot_prefix flag and strips leading slashes."""
+    gw, _ = _make_gateway()
+    result = gw.topic_for(topic, bot_prefix=bot_prefix)
+    expected = expected_pattern.format(ns=gw._config.namespace, iid=gw.app.instance_id)
+    assert result == expected
