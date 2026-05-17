@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from remote_iface._commlib.wrappers.subscriber import Subscriber
     from remote_iface.gateway.gateway import MQTTGateway
 

@@ -11,15 +11,16 @@ Default values for use_bot_prefix match the upstream defaults:
 
 from __future__ import annotations
 
-from collections import deque
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from remote_iface.external.events import EEventListenerFactory, EEventQueueFactory
-from remote_iface.external.listeners import ETopicListener
 from remote_iface.external.topics import ETopicListenerFactory, ETopicQueueFactory
 
 if TYPE_CHECKING:
+    from collections import deque
+    from collections.abc import Callable
+
+    from remote_iface.external.listeners import ETopicListener
     from remote_iface.gateway.gateway import MQTTGateway
 
 

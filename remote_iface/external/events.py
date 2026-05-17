@@ -20,10 +20,11 @@ from __future__ import annotations
 import functools
 import logging
 from collections import deque
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from remote_iface.gateway.gateway import MQTTGateway
 
 _logger = logging.getLogger("remote_iface.external.events")
