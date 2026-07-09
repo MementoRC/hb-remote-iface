@@ -52,23 +52,43 @@ async def test_default_mqtt_transport_factory_builds_aiomqtt_client() -> None:
     assert isinstance(client.identifier, str)
 
 
-async def test_default_mqtt_transport_factory_ssl_uses_tls_parameters() -> None:
+async def test_default_mqtt_transport_factory_ssl_uses_tls_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import aiomqtt
+
+    captured: dict[str, object] = {}
+    real_client = aiomqtt.Client
+
+    def _spy_client(*args: object, **kwargs: object) -> aiomqtt.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(aiomqtt, "Client", _spy_client)
 
     config = TransportConfig(host="broker.local", ssl=True)
     factory = default_mqtt_transport_factory(config)
-    client = factory()
+    factory()
 
-    assert isinstance(client, aiomqtt.Client)
-    assert client._tls_params is not None  # noqa: SLF001 - aiomqtt exposes no public TLS accessor
-    assert isinstance(client._tls_params, aiomqtt.TLSParameters)  # noqa: SLF001
+    assert isinstance(captured["tls_params"], aiomqtt.TLSParameters)
 
 
-async def test_default_mqtt_transport_factory_no_ssl_leaves_tls_params_unset() -> None:
-    from remote_iface._commlib.transport import TransportConfig, default_mqtt_transport_factory
+async def test_default_mqtt_transport_factory_no_ssl_leaves_tls_params_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import aiomqtt
+
+    captured: dict[str, object] = {}
+    real_client = aiomqtt.Client
+
+    def _spy_client(*args: object, **kwargs: object) -> aiomqtt.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(aiomqtt, "Client", _spy_client)
 
     config = TransportConfig(host="broker.local", ssl=False)
     factory = default_mqtt_transport_factory(config)
-    client = factory()
+    factory()
 
-    assert client._tls_params is None  # noqa: SLF001 - aiomqtt exposes no public TLS accessor
+    assert captured["tls_params"] is None
