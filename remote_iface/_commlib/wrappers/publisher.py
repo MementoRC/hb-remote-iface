@@ -1,18 +1,21 @@
-"""Publisher wrapper over a commlib publisher primitive."""
+"""Publisher wrapper routing through NodeContext's shared outgoing queue."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from remote_iface._commlib.wrappers.endpoint import Endpoint
 
+if TYPE_CHECKING:
+    from remote_iface._commlib.node_context import NodeContext
+
 
 class Publisher(Endpoint):
-    """Wraps a commlib publisher to provide lifecycle management and failure isolation.
+    """Wraps a topic+msg_type pair, publishing via the owning NodeContext's queue.
 
-    The underlying commlib publisher object (_cp) is injected after construction via _bind(),
-    which NodeContext calls when it instantiates the transport-specific publisher. Until _bind()
-    is called, _do_start() will raise AssertionError — NodeContext must bind before starting.
-    Publish failures increment a counter and are logged at WARNING; they are never re-raised so
-    a single bad message cannot break the send loop.
+    publish() is thread-safe: it may be called from the event loop thread or from a
+    worker thread (e.g. an RPC handler's ThreadPoolExecutor), since NodeContext's
+    _enqueue_outgoing() uses loop.call_soon_threadsafe().
     """
 
     def __init__(self, *, topic: str, msg_type: type) -> None:
@@ -20,22 +23,19 @@ class Publisher(Endpoint):
         self.topic: str = topic
         self.msg_type: type = msg_type
         self.publish_failure_count: int = 0
-        self._cp: Any = None
+        self._nc: NodeContext | None = None
 
-    def _bind(self, commlib_publisher: Any) -> None:
-        """Inject the commlib publisher created by NodeContext for this topic."""
-        self._cp = commlib_publisher
+    def _bind(self, node_context: NodeContext) -> None:
+        """Inject the owning NodeContext."""
+        self._nc = node_context
 
     def _do_start(self) -> None:
-        assert self._cp is not None, (
-            f"Publisher for '{self.topic}' has no bound commlib publisher — call _bind() first"
+        assert self._nc is not None, (
+            f"Publisher for '{self.topic}' has no bound NodeContext — call _bind() first"
         )
-        if hasattr(self._cp, "start"):
-            self._cp.start()
 
     def _do_stop(self) -> None:
-        if self._cp is not None and hasattr(self._cp, "stop"):
-            self._cp.stop()
+        pass
 
     def publish(self, message: object) -> None:
         """Publish a message. Drops silently (with counter increment) if not started."""
@@ -46,7 +46,10 @@ class Publisher(Endpoint):
             self.publish_failure_count += 1
             return
         try:
-            self._cp.publish(message)
+            from remote_iface._commlib.serialization import serialize
+
+            payload = serialize(message)
+            self._nc._enqueue_outgoing(self.topic, payload, qos=0)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             self.publish_failure_count += 1
             self._logger.warning(

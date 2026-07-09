@@ -1,295 +1,288 @@
-"""Unit tests for NodeContext orchestration (wrapper lifecycle, binding, reverse-order stop).
+"""Unit tests for NodeContext's aiomqtt.Client-based connection loop.
 
-NodeContext imports commlib.node.Node lazily inside start() via:
-    from commlib.node import Node
-
-The correct patch target for that local import is "commlib.node.Node" because Python's import
-system resolves it from the commlib.node module namespace.  Patching "remote_iface._commlib.
-node_context.Node" would only work if Node were bound at module level, which it is not.
+NodeContext.start()/stop() are async now — they run a single aiomqtt.Client connection
+as an asyncio.Task on the caller's event loop, replacing the commlib-Node-on-a-thread
+model. These tests use a minimal fake aiomqtt client (matching the async-context-manager
++ subscribe/publish/messages surface) instead of a real broker.
 """
 
-import threading
-import time
-from unittest.mock import MagicMock, patch
+import asyncio
 
 import pytest
 
-from remote_iface._commlib.node_context import NodeContext
-from remote_iface._commlib.wrappers.publisher import Publisher
-from remote_iface._commlib.wrappers.rpc_service import RPCService
-from remote_iface._commlib.wrappers.subscriber import Subscriber
-
 pytestmark = pytest.mark.unit
 
-_SHORT_TIMEOUT = 1.0  # seconds for thread-related assertions
 
-# Patch target: the Node class inside the commlib.node module (the source of the lazy import).
-_NODE_PATCH = "commlib.node.Node"
-
-
-def _make_mock_node() -> MagicMock:
-    """Return a MagicMock that satisfies the commlib Node interface used by NodeContext."""
-    node = MagicMock()
-    node.run = MagicMock(return_value=None)
-    return node
+class _FakeMessage:
+    def __init__(self, topic: str, payload: bytes) -> None:
+        self.topic = topic
+        self.payload = payload
 
 
-def _make_context() -> NodeContext:
-    """Construct a NodeContext with a dummy transport factory (no real MQTT needed)."""
+class _FakeAiomqttClient:
+    """Minimal async-context-manager fake matching aiomqtt.Client's used surface."""
 
-    def _transport_factory() -> object:
-        return MagicMock()
+    def __init__(self, *, incoming: list[_FakeMessage] | None = None) -> None:
+        self.published: list[tuple[str, bytes, int]] = []
+        self.subscribed: list[str] = []
+        self._incoming = incoming or []
 
-    return NodeContext(node_name="test-node", transport_factory=_transport_factory)
+    async def __aenter__(self) -> "_FakeAiomqttClient":
+        return self
 
+    async def __aexit__(self, *exc_info: object) -> bool:
+        return False
 
-def _start_with_mock(mock_node: MagicMock, ctx: NodeContext) -> None:
-    """Start ctx with commlib.node.Node patched to return mock_node."""
-    with patch(_NODE_PATCH, return_value=mock_node):
-        ctx.start()
+    async def subscribe(self, topic: str, qos: int = 0) -> None:
+        self.subscribed.append(topic)
+
+    async def publish(self, topic: str, payload: bytes, qos: int = 0) -> None:
+        self.published.append((topic, payload, qos))
+
+    @property
+    def messages(self):
+        async def _gen():
+            for m in self._incoming:
+                yield m
+            # Idle forever afterward so _dispatch_incoming doesn't exit and race stop().
+            await asyncio.Event().wait()
+
+        return _gen()
 
 
 # ---------------------------------------------------------------------------
-# Factory / binding tests
+# Lifecycle / health
 # ---------------------------------------------------------------------------
 
 
-def test_create_publisher_before_start_returns_unbound_wrapper() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    pub = ctx.create_publisher(topic="t/1", msg_type=dict)
-    assert isinstance(pub, Publisher)
-    assert pub._cp is None  # not yet bound
-    assert pub in ctx._wrappers
-    _start_with_mock(mock_node, ctx)
-    ctx.stop()
+@pytest.mark.asyncio
+async def test_node_context_start_connects_and_sets_healthy() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    assert nc.is_healthy() is True
+
+    await nc.stop()
+    assert nc.is_healthy() is False
 
 
-def test_start_binds_pending_wrappers() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    pub = ctx.create_publisher(topic="t/1", msg_type=dict)
-    assert pub._cp is None
-    _start_with_mock(mock_node, ctx)
+@pytest.mark.asyncio
+async def test_idempotent_start_and_stop() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    await nc.start()
+    await nc.start()  # second start must be no-op
+    await asyncio.sleep(0.05)
+
+    await nc.stop()
+    await nc.stop()  # second stop must be no-op
+
+
+# ---------------------------------------------------------------------------
+# Publisher
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_publisher_publish_enqueues_and_client_publishes() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+    pub = nc.create_publisher(topic="t/1", msg_type=dict)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+
+    pub.publish({"x": 1})
+    await asyncio.sleep(0.05)
+
+    assert fake_client.published
+    topic, _payload, _qos = fake_client.published[0]
+    assert topic == "t/1"
+
+    await nc.stop()
+
+
+@pytest.mark.asyncio
+async def test_publisher_publish_before_start_drops_and_counts_failure() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+    pub = nc.create_publisher(topic="t/x", msg_type=dict)
+
+    pub._started = False  # simulate not-yet-started wrapper
+    pub.publish({"x": 1})
+
+    assert pub.publish_failure_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Subscriber
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_subscriber_receives_matching_message() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    msg = _FakeMessage("t/2", serialize({"y": 2}))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    received = []
+    nc.create_subscriber(topic="t/2", on_message=received.append, msg_type=None)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    await nc.stop()
+
+    assert received and received[0] == {"y": 2}
+
+
+@pytest.mark.asyncio
+async def test_subscriber_wildcard_topic_matches() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    msg = _FakeMessage("t/abc/data", serialize({"w": 1}))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    received = []
+    nc.create_subscriber(topic="t/+/data", on_message=received.append, msg_type=None)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    await nc.stop()
+
+    assert received and received[0] == {"w": 1}
+
+
+@pytest.mark.asyncio
+async def test_subscriber_set_callback_after_start_takes_effect() -> None:
+    """Regression test for the wrapper.on_message closure fix — set_callback() must work live."""
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    msg = _FakeMessage("t/3", serialize({"z": 3}))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    received_old, received_new = [], []
+    sub = nc.create_subscriber(topic="t/3", on_message=received_old.append, msg_type=None)
+    sub.set_callback(received_new.append)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    await nc.stop()
+
+    assert not received_old
+    assert received_new and received_new[0] == {"z": 3}
+
+
+# ---------------------------------------------------------------------------
+# RPC
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rpc_service_dispatches_and_replies() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    def handler(_req: object) -> dict:
+        return {"status": 200}
+
+    envelope = {"header": {"reply_to": "reply/topic"}, "data": {}}
+    msg = _FakeMessage("cmd/1", serialize(envelope))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+    nc.create_rpc(rpc_name="cmd/1", msg_type=dict, on_request=handler)
+
+    await nc.start()
+    await asyncio.sleep(0.2)
+    await nc.stop()
+
+    assert any(topic == "reply/topic" for topic, _payload, _qos in fake_client.published)
+
+
+@pytest.mark.asyncio
+async def test_rpc_reply_envelope_uses_millisecond_timestamp() -> None:
+    """Regression: reply timestamp must be milliseconds (int(time.time()*1000)), not
+    nanoseconds — the ns/ms wire-format bug from commlib's gen_timestamp() (decision-d9106708)
+    must not resurface now that the aiomqtt path builds its own envelope."""
+    import json
+    import time
+
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    def handler(_req: object) -> dict:
+        return {"ok": True}
+
+    envelope = {"header": {"reply_to": "reply/ts"}, "data": {}}
+    msg = _FakeMessage("cmd/ts", serialize(envelope))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+    nc.create_rpc(rpc_name="cmd/ts", msg_type=dict, on_request=handler)
+
+    before_ms = int(time.time() * 1000)
+    await nc.start()
+    await asyncio.sleep(0.2)
+    await nc.stop()
+    after_ms = int(time.time() * 1000)
+
+    reply = next(p for t, p, _q in fake_client.published if t == "reply/ts")
+    body = json.loads(reply)
+    ts = body["header"]["timestamp"]
+    assert before_ms - 1000 <= ts <= after_ms + 1000
+
+
+# ---------------------------------------------------------------------------
+# Reconnect behavior
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_reconnects_after_mqtt_error() -> None:
+    import aiomqtt
+
+    from remote_iface._commlib.node_context import NodeContext
+
+    attempts: list[_FakeAiomqttClient] = []
+
+    class _FailOnceClient(_FakeAiomqttClient):
+        async def __aenter__(self) -> "_FailOnceClient":
+            attempts.append(self)
+            if len(attempts) == 1:
+                raise aiomqtt.MqttError("simulated disconnect")
+            return self
+
+    def _factory() -> _FailOnceClient:
+        return _FailOnceClient()
+
+    nc = NodeContext(node_name="n1", transport_factory=_factory)
+    nc._reconnect_interval_s = 0  # type: ignore[attr-defined]  # speed up test if attr exists
+
+    import remote_iface._commlib.node_context as nc_module
+
+    original_interval = nc_module._RECONNECT_INTERVAL_S
+    nc_module._RECONNECT_INTERVAL_S = 0.01
     try:
-        assert pub._cp is not None  # bound during start()
-        assert pub.is_started is True
+        await nc.start()
+        await asyncio.sleep(0.2)
+        assert len(attempts) >= 2
+        assert nc.is_healthy() is True
+        await nc.stop()
     finally:
-        ctx.stop()
-
-
-def test_create_publisher_after_start_immediately_binds() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        pub = ctx.create_publisher(topic="t/2", msg_type=dict)
-        assert pub._cp is not None
-        assert pub.is_started is True
-    finally:
-        ctx.stop()
-
-
-def test_create_subscriber_after_start_immediately_binds_and_starts() -> None:
-    """Lines 184-191: create_subscriber when already started — binds and starts immediately."""
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        on_msg = MagicMock()
-        sub = ctx.create_subscriber(topic="t/sub", on_message=on_msg, msg_type=dict)
-        assert isinstance(sub, Subscriber)
-        assert sub._cp is not None
-        assert sub.is_started is True
-        assert sub in ctx._wrappers
-    finally:
-        ctx.stop()
-
-
-def test_create_rpc_after_start_immediately_binds_and_starts() -> None:
-    """Lines 202-210: create_rpc when already started — binds and starts immediately."""
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        on_request = MagicMock(return_value={})
-        rpc = ctx.create_rpc(rpc_name="my.rpc", msg_type=dict, on_request=on_request)
-        assert isinstance(rpc, RPCService)
-        assert rpc._cp is not None
-        assert rpc.is_started is True
-        assert rpc in ctx._wrappers
-    finally:
-        ctx.stop()
-
-
-def test_create_subscriber_wildcard_topic_uses_psubscriber() -> None:
-    """Lines 252-261: wildcard topic (+/#) routes to create_psubscriber, not create_subscriber."""
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        on_msg = MagicMock()
-        ctx.create_subscriber(topic="t/+/data", on_message=on_msg, msg_type=None)
-        mock_node.create_psubscriber.assert_called_once()
-        mock_node.create_subscriber.assert_not_called()
-    finally:
-        ctx.stop()
-
-
-def test_create_subscriber_exact_topic_uses_subscriber() -> None:
-    """Lines 257-261: exact topic routes to create_subscriber, not create_psubscriber."""
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        on_msg = MagicMock()
-        ctx.create_subscriber(topic="t/exact", on_message=on_msg, msg_type=None)
-        mock_node.create_subscriber.assert_called_once()
-        mock_node.create_psubscriber.assert_not_called()
-    finally:
-        ctx.stop()
-
-
-def test_stop_logs_warning_when_node_stop_raises() -> None:
-    """Lines 112-120: stop() swallows Node.stop() exceptions and logs warning."""
-    mock_node = _make_mock_node()
-    mock_node.stop = MagicMock(side_effect=RuntimeError("node boom"))
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    ctx.stop()  # must not raise
-    assert not ctx._started
-
-
-# ---------------------------------------------------------------------------
-# Reverse-order stop
-# ---------------------------------------------------------------------------
-
-
-def test_stop_invokes_each_wrapper_stop_in_reverse_order() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-
-    stop_order: list[str] = []
-
-    # Create three publishers post-start so they're immediately bound.
-    p1 = ctx.create_publisher(topic="t/p1", msg_type=dict)
-    p2 = ctx.create_publisher(topic="t/p2", msg_type=dict)
-    p3 = ctx.create_publisher(topic="t/p3", msg_type=dict)
-
-    # Wrap each wrapper's stop() to record the call order.
-    for label, wrapper in [("P1", p1), ("P2", p2), ("P3", p3)]:
-        _orig = wrapper.stop
-
-        def _recording_stop(_lbl: str = label, _fn=_orig) -> None:
-            stop_order.append(_lbl)
-            _fn()
-
-        wrapper.stop = _recording_stop  # type: ignore[method-assign]
-
-    ctx.stop()
-    assert stop_order == ["P3", "P2", "P1"]
-
-
-def test_stop_continues_after_one_wrapper_raises() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-
-    stopped: list[str] = []
-    p1 = ctx.create_publisher(topic="t/q1", msg_type=dict)
-    p2 = ctx.create_publisher(topic="t/q2", msg_type=dict)
-
-    # p2 is registered second → stopped first in reverse order; it raises.
-    p2.stop = MagicMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
-
-    def _recording_p1_stop() -> None:
-        stopped.append("P1")
-
-    p1.stop = _recording_p1_stop  # type: ignore[method-assign]
-
-    ctx.stop()  # must not raise; P1 must still be called after P2 raises
-    assert "P1" in stopped
-
-
-# ---------------------------------------------------------------------------
-# Idempotency
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# is_healthy tests
-# ---------------------------------------------------------------------------
-
-
-def test_is_healthy_returns_false_when_node_not_started() -> None:
-    ctx = _make_context()
-    assert ctx.is_healthy() is False
-
-
-def test_is_healthy_returns_true_when_node_health_is_true() -> None:
-    mock_node = _make_mock_node()
-    mock_node.health = True
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        assert ctx.is_healthy() is True
-    finally:
-        ctx.stop()
-
-
-def test_is_healthy_returns_false_when_node_health_is_false() -> None:
-    mock_node = _make_mock_node()
-    mock_node.health = False
-    ctx = _make_context()
-    _start_with_mock(mock_node, ctx)
-    try:
-        assert ctx.is_healthy() is False
-    finally:
-        ctx.stop()
-
-
-# ---------------------------------------------------------------------------
-# Idempotency
-# ---------------------------------------------------------------------------
-
-
-def test_idempotent_start_and_stop() -> None:
-    mock_node = _make_mock_node()
-    ctx = _make_context()
-    with patch(_NODE_PATCH, return_value=mock_node):
-        ctx.start()
-        ctx.start()  # second start must be no-op
-    ctx.stop()
-    ctx.stop()  # second stop must be no-op
-
-
-# ---------------------------------------------------------------------------
-# Node daemon thread
-# ---------------------------------------------------------------------------
-
-
-def test_node_run_is_called_in_background_thread() -> None:
-    mock_node = _make_mock_node()
-    run_started = threading.Event()
-    stop_called = threading.Event()
-
-    def _blocking_run() -> None:
-        run_started.set()
-        stop_called.wait(timeout=_SHORT_TIMEOUT)
-
-    mock_node.run = _blocking_run
-
-    ctx = _make_context()
-
-    with patch(_NODE_PATCH, return_value=mock_node):
-        t0 = time.monotonic()
-        ctx.start()
-        elapsed = time.monotonic() - t0
-
-    # start() must return promptly (< 0.5s) even though node.run() blocks.
-    assert elapsed < 0.5, f"start() blocked for {elapsed:.2f}s — daemon thread not working"
-    assert run_started.wait(timeout=_SHORT_TIMEOUT), "node.run() never called in daemon thread"
-
-    stop_called.set()
-    ctx.stop()
+        nc_module._RECONNECT_INTERVAL_S = original_interval
