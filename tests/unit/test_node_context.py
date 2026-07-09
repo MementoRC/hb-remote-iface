@@ -238,9 +238,7 @@ async def test_rpc_dispatch_does_not_block_event_loop_under_concurrent_load() ->
         return {"ok": True}
 
     messages = [
-        _FakeMessage(
-            "cmd/slow", serialize({"header": {"reply_to": f"reply/{i}"}, "data": {}})
-        )
+        _FakeMessage("cmd/slow", serialize({"header": {"reply_to": f"reply/{i}"}, "data": {}}))
         for i in range(4)
     ]
     fake_client = _FakeAiomqttClient(incoming=messages)

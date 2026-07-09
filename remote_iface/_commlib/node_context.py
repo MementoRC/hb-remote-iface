@@ -102,9 +102,7 @@ class NodeContext:
                         self._loop.create_task(self._drain_outgoing(client)),
                         self._loop.create_task(self._dispatch_incoming(client)),
                     ]
-                    done, _pending = await asyncio.wait(
-                        tasks, return_when=asyncio.FIRST_EXCEPTION
-                    )
+                    done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
                     for t in done:
                         exc = t.exception()
                         if exc is not None:
@@ -114,12 +112,17 @@ class NodeContext:
             except aiomqtt.MqttError as exc:
                 _logger.warning(
                     "NodeContext(%r): MQTT disconnected: %s — reconnecting in %.1fs",
-                    self._node_name, exc, _RECONNECT_INTERVAL_S,
+                    self._node_name,
+                    exc,
+                    _RECONNECT_INTERVAL_S,
                 )
             except Exception as exc:  # noqa: BLE001
                 _logger.error(
                     "NodeContext(%r): connection error: %s: %s — reconnecting in %.1fs",
-                    self._node_name, type(exc).__name__, exc, _RECONNECT_INTERVAL_S,
+                    self._node_name,
+                    type(exc).__name__,
+                    exc,
+                    _RECONNECT_INTERVAL_S,
                 )
             finally:
                 self._connected = False
@@ -148,7 +151,9 @@ class NodeContext:
             except (ValueError, TypeError):
                 _logger.debug(
                     "NodeContext(%r): dropping malformed JSON payload on %r",
-                    self._node_name, topic, exc_info=True,
+                    self._node_name,
+                    topic,
+                    exc_info=True,
                 )
                 continue
 
@@ -170,7 +175,9 @@ class NodeContext:
                         except Exception:  # noqa: BLE001
                             _logger.error(
                                 "NodeContext(%r): subscriber callback raised on %r",
-                                self._node_name, topic, exc_info=True,
+                                self._node_name,
+                                topic,
+                                exc_info=True,
                             )
 
     def _dispatch_rpc(self, topic: str, payload: dict[str, Any]) -> None:

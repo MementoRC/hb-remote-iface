@@ -86,6 +86,7 @@ def test_serialize_plain_object_uses_dict() -> None:
 
 def test_serialize_dataclass_roundtrip() -> None:
     """Test non-slotted dataclass (as per task plan)."""
+
     @dataclass
     class _Sample:
         a: int
