@@ -40,7 +40,9 @@ def test_transport_config_is_frozen() -> None:
 async def test_default_mqtt_transport_factory_builds_aiomqtt_client() -> None:
     import aiomqtt
 
-    config = TransportConfig(host="broker.local", port=1884, username="u", password="p", keepalive=30)
+    config = TransportConfig(
+        host="broker.local", port=1884, username="u", password="p", keepalive=30
+    )
     factory = default_mqtt_transport_factory(config)
     client = factory()
 
