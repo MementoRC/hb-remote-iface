@@ -1,4 +1,4 @@
-"""Unit tests for serialize/deserialize roundtrip via JSONSerializer facade."""
+"""Unit tests for serialize/deserialize roundtrip via stdlib json."""
 
 from dataclasses import dataclass
 
@@ -6,6 +6,7 @@ import pytest
 from pydantic import BaseModel
 
 from remote_iface._commlib.serialization import deserialize, serialize
+from remote_iface.protocols.messages import NotifyMessage
 
 pytestmark = pytest.mark.unit
 
@@ -81,3 +82,50 @@ def test_serialize_plain_object_uses_dict() -> None:
     result = deserialize(payload)
     assert result["a"] == 99
     assert result["b"] == "world"
+
+
+def test_serialize_dataclass_roundtrip() -> None:
+    """Test non-slotted dataclass (as per task plan)."""
+    @dataclass
+    class _Sample:
+        a: int
+        b: str
+
+    raw = serialize(_Sample(a=1, b="x"))
+    assert isinstance(raw, bytes)
+    restored = deserialize(raw, _Sample)
+    assert restored == _Sample(a=1, b="x")
+
+
+def test_serialize_slotted_dataclass_roundtrip() -> None:
+    """Test slotted dataclass (real message types in this repo all use slots=True).
+
+    This is the critical test: NotifyMessage and other real message types from
+    remote_iface.protocols.messages use @dataclass(slots=True), which do NOT have
+    __dict__. The serialize() function must handle slotted dataclasses correctly
+    using dataclasses.asdict() instead of relying on __dict__.
+    """
+    msg = NotifyMessage(seq=42, timestamp=1000, msg="test")
+    payload = serialize(msg)
+    assert isinstance(payload, bytes)
+
+    # Deserialize back to the same type
+    restored = deserialize(payload, msg_type=NotifyMessage)
+    assert isinstance(restored, NotifyMessage)
+    assert restored.seq == 42
+    assert restored.timestamp == 1000
+    assert restored.msg == "test"
+    assert restored == msg
+
+
+def test_serialize_slotted_dataclass_with_none_fields() -> None:
+    """Test slotted dataclass with optional fields (all None)."""
+    msg = NotifyMessage()  # All fields default to None
+    payload = serialize(msg)
+    assert isinstance(payload, bytes)
+
+    restored = deserialize(payload, msg_type=NotifyMessage)
+    assert restored == msg
+    assert restored.seq is None
+    assert restored.timestamp is None
+    assert restored.msg is None
