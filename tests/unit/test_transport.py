@@ -19,35 +19,54 @@ def test_default_mqtt_transport_factory_returns_callable() -> None:
     assert callable(factory)
 
 
-def test_factory_call_produces_connection_params_with_correct_host_port(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recorded: dict[str, object] = {}
-
-    class _FakeConnectionParameters:
-        def __init__(self, **kwargs: object) -> None:
-            recorded.update(kwargs)
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-
-    # Patch commlib's MQTT ConnectionParameters so the test does not depend on paho.
-    import sys
-
-    fake_module = type(sys)("commlib.transports.mqtt")
-    fake_module.ConnectionParameters = _FakeConnectionParameters  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "commlib.transports.mqtt", fake_module)
+async def test_factory_call_produces_aiomqtt_client_with_correct_host_port() -> None:
+    import aiomqtt
 
     cfg = TransportConfig(host="broker.example.com", port=8883, username="u", password="p")
     factory = default_mqtt_transport_factory(cfg)
-    params = factory()
+    client = factory()
 
-    assert params.host == "broker.example.com"  # type: ignore[attr-defined]
-    assert params.port == 8883  # type: ignore[attr-defined]
-    assert params.username == "u"  # type: ignore[attr-defined]
-    assert params.password == "p"  # type: ignore[attr-defined]
+    assert isinstance(client, aiomqtt.Client)
+    assert client._hostname == "broker.example.com"  # noqa: SLF001 - no public accessor exists
+    assert client._port == 8883  # noqa: SLF001 - no public accessor exists
 
 
 def test_transport_config_is_frozen() -> None:
     cfg = TransportConfig()
     with pytest.raises((AttributeError, TypeError)):
         cfg.host = "other"  # type: ignore[misc]
+
+
+async def test_default_mqtt_transport_factory_builds_aiomqtt_client() -> None:
+    import aiomqtt
+
+    config = TransportConfig(host="broker.local", port=1884, username="u", password="p", keepalive=30)
+    factory = default_mqtt_transport_factory(config)
+    client = factory()
+
+    assert isinstance(client, aiomqtt.Client)
+    # aiomqtt.Client.identifier is a public property; paho leaves the id as an empty
+    # string until connect-time auto-generation, so we only assert it resolves cleanly.
+    assert isinstance(client.identifier, str)
+
+
+async def test_default_mqtt_transport_factory_ssl_uses_tls_parameters() -> None:
+    import aiomqtt
+
+    config = TransportConfig(host="broker.local", ssl=True)
+    factory = default_mqtt_transport_factory(config)
+    client = factory()
+
+    assert isinstance(client, aiomqtt.Client)
+    assert client._tls_params is not None  # noqa: SLF001 - aiomqtt exposes no public TLS accessor
+    assert isinstance(client._tls_params, aiomqtt.TLSParameters)  # noqa: SLF001
+
+
+async def test_default_mqtt_transport_factory_no_ssl_leaves_tls_params_unset() -> None:
+    from remote_iface._commlib.transport import TransportConfig, default_mqtt_transport_factory
+
+    config = TransportConfig(host="broker.local", ssl=False)
+    factory = default_mqtt_transport_factory(config)
+    client = factory()
+
+    assert client._tls_params is None  # noqa: SLF001 - aiomqtt exposes no public TLS accessor
