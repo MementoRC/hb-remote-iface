@@ -217,6 +217,59 @@ async def test_rpc_service_dispatches_and_replies() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rpc_dispatch_does_not_block_event_loop_under_concurrent_load() -> None:
+    """Regression for the double-hop executor bug: multiple concurrent RPC requests must
+    not tie up event-loop-thread dispatch (_dispatch_rpc runs inline and non-blocking —
+    the actual handler call is offloaded to RPCService's own executor via a Future).
+
+    Uses N slow handlers on a single-topic RPCService (max_workers=1 default pool
+    sizing doesn't matter here — what matters is that dispatch itself never blocks the
+    loop waiting on .result()). We assert the event loop stayed responsive (a concurrent
+    asyncio.sleep-based heartbeat kept ticking) while requests were in flight, and that
+    all replies eventually arrive.
+    """
+    import time
+
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    def slow_handler(_req: object) -> dict:
+        time.sleep(0.15)
+        return {"ok": True}
+
+    messages = [
+        _FakeMessage(
+            "cmd/slow", serialize({"header": {"reply_to": f"reply/{i}"}, "data": {}})
+        )
+        for i in range(4)
+    ]
+    fake_client = _FakeAiomqttClient(incoming=messages)
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+    nc.create_rpc(rpc_name="cmd/slow", msg_type=dict, on_request=slow_handler)
+
+    heartbeat_ticks = 0
+
+    async def _heartbeat() -> None:
+        nonlocal heartbeat_ticks
+        for _ in range(20):
+            await asyncio.sleep(0.02)
+            heartbeat_ticks += 1
+
+    await nc.start()
+    await asyncio.gather(_heartbeat(), asyncio.sleep(0.6))
+    await nc.stop()
+
+    # The event loop must have kept ticking the heartbeat throughout — if _dispatch_rpc
+    # were blocking (old double-hop design), the loop thread would stall and ticks would
+    # be starved/delayed well below the expected count.
+    assert heartbeat_ticks >= 15, (
+        f"only {heartbeat_ticks}/20 heartbeat ticks fired — event loop appears blocked"
+    )
+    replies = {topic for topic, _payload, _qos in fake_client.published}
+    assert replies == {f"reply/{i}" for i in range(4)}
+
+
+@pytest.mark.asyncio
 async def test_rpc_reply_envelope_uses_millisecond_timestamp() -> None:
     """Regression: reply timestamp must be milliseconds (int(time.time()*1000)), not
     nanoseconds — the ns/ms wire-format bug from commlib's gen_timestamp() (decision-d9106708)

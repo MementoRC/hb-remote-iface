@@ -4,7 +4,7 @@ registers into NodeContext._command_table for incoming request routing.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from remote_iface._commlib.wrappers.endpoint import Endpoint
@@ -55,10 +55,15 @@ class RPCService(Endpoint):
         )
         self._nc._command_table[self._rpc_name] = (self._msg_type, self._dispatch)  # noqa: SLF001
 
-    def _dispatch(self, request: object) -> object:
-        """Submitted via the owned executor; called by NodeContext._dispatch_rpc."""
-        future = self._executor.submit(self._on_request, request)
-        return future.result(timeout=self._stop_timeout + 25.0)
+    def _dispatch(self, request: object) -> Future:
+        """Submit the handler call onto this service's OWN bounded executor and return
+        the Future immediately (non-blocking) — called by NodeContext._dispatch_rpc.
+
+        Deliberately does NOT block-and-wait here: NodeContext._dispatch_rpc runs inline
+        on the event loop thread (no run_in_executor hop), so blocking in this method
+        would stall the event loop. The caller attaches a completion callback instead.
+        """
+        return self._executor.submit(self._on_request, request)
 
     def _do_stop(self) -> None:
         if self._nc is not None:

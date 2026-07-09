@@ -142,10 +142,20 @@ class NodeContext:
             try:
                 data = json.loads(message.payload)
             except (ValueError, TypeError):
+                _logger.debug(
+                    "NodeContext(%r): dropping malformed JSON payload on %r",
+                    self._node_name, topic, exc_info=True,
+                )
                 continue
 
             if topic in self._command_table:
-                self._loop.run_in_executor(None, self._dispatch_rpc, topic, data)
+                # Dispatch inline on the event loop thread — cheap (dict lookups + type
+                # coercion). The actual handler call is submitted onto RPCService's OWN
+                # bounded executor by handler() below, so this never blocks the loop and
+                # never routes through the process-wide default executor (avoids the
+                # double-hop where a default-executor thread sits blocked on .result()
+                # while the real work runs on a second, unrelated pool).
+                self._dispatch_rpc(topic, data)
                 continue
 
             for pattern, callbacks in list(self._sub_callbacks.items()):
@@ -160,7 +170,12 @@ class NodeContext:
                             )
 
     def _dispatch_rpc(self, topic: str, payload: dict[str, Any]) -> None:
-        """Runs off the event loop (default executor) — RPC handlers may block."""
+        """Runs inline on the event loop thread — request coercion is cheap, and the
+        handler call itself is offloaded to RPCService's own bounded executor via
+        `handler(request)`, which returns a concurrent.futures.Future immediately rather
+        than blocking (see RPCService._dispatch). Reply-publishing happens in
+        _on_rpc_future_done, invoked from the executor thread once the handler completes.
+        """
         msg_type, handler = self._command_table[topic]
         header = payload.get("header", {}) if isinstance(payload, dict) else {}
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
@@ -171,14 +186,32 @@ class NodeContext:
                 if hasattr(msg_type, "model_validate")
                 else msg_type(**(data or {}))
             )
-            response = handler(request)
+            future = handler(request)
         except Exception:  # noqa: BLE001
             _logger.error(
                 "NodeContext(%r): RPC handler raised on %r", self._node_name, topic, exc_info=True
             )
             return
         if reply_to:
-            self._enqueue_outgoing(reply_to, self._wrap_response(response), qos=1)
+            future.add_done_callback(
+                lambda fut, _topic=topic, _reply_to=reply_to: self._on_rpc_future_done(
+                    fut, _topic, _reply_to
+                )
+            )
+
+    def _on_rpc_future_done(self, future: Any, topic: str, reply_to: str) -> None:
+        """Completion callback for an RPC handler Future — runs on the RPCService's OWN
+        executor thread (not the event loop thread), so _enqueue_outgoing's thread-safe
+        call_soon_threadsafe path is required here.
+        """
+        try:
+            response = future.result()
+        except Exception:  # noqa: BLE001
+            _logger.error(
+                "NodeContext(%r): RPC handler raised on %r", self._node_name, topic, exc_info=True
+            )
+            return
+        self._enqueue_outgoing(reply_to, self._wrap_response(response), qos=1)
 
     def _wrap_response(self, response: Any) -> bytes:
         """Build the reply envelope. Milliseconds timestamp matches upstream exactly

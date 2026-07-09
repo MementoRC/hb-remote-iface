@@ -99,7 +99,34 @@ def test_dispatch_submits_to_owned_executor_and_returns_result() -> None:
     svc, _mock_nc = _make_bound_rpc()
     svc.start()
     try:
-        result = svc._dispatch({"req": True})
-        assert result == {}
+        future = svc._dispatch({"req": True})
+        assert future.result(timeout=_SHORT_TIMEOUT) == {}
+    finally:
+        svc.stop()
+
+
+def test_dispatch_returns_future_without_blocking_caller() -> None:
+    """Regression: _dispatch must return immediately (a Future), not block-and-wait —
+    NodeContext._dispatch_rpc runs this inline on the event loop thread now, so a
+    blocking _dispatch would stall the loop."""
+    import time
+    from concurrent.futures import Future
+
+    def _slow_request(_msg: object) -> object:
+        time.sleep(0.3)
+        return {"slow": True}
+
+    svc = RPCService(rpc_name="slow.rpc", msg_type=dict, on_request=_slow_request)
+    mock_nc = MagicMock()
+    mock_nc._command_table = {}
+    svc._bind(mock_nc)
+    svc.start()
+    try:
+        t0 = time.monotonic()
+        future = svc._dispatch({"req": True})
+        elapsed = time.monotonic() - t0
+        assert isinstance(future, Future)
+        assert elapsed < 0.1, f"_dispatch blocked for {elapsed:.2f}s — must return immediately"
+        assert future.result(timeout=1.0) == {"slow": True}
     finally:
         svc.stop()
