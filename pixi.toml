@@ -9,6 +9,7 @@ paho-mqtt = ">=2.0"
 
 [pypi-dependencies]
 commlib-py = ">=0.13.2,<0.14"
+aiomqtt = ">=2.0"
 
 [feature.dev.dependencies]
 pytest = ">=9.0.3"

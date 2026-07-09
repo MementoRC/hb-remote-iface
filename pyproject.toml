@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2",
     "commlib-py>=0.13.2,<0.14",
     "paho-mqtt>=2.0",
+    "aiomqtt>=2.0",
 ]
 
 [project.optional-dependencies]
