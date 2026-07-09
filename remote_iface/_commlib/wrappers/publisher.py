@@ -49,6 +49,9 @@ class Publisher(Endpoint):
             from remote_iface._commlib.serialization import serialize
 
             payload = serialize(message)
+            assert self._nc is not None, (
+                f"Publisher for '{self.topic}' published before _do_start() ran"
+            )
             self._nc._enqueue_outgoing(self.topic, payload, qos=0)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             self.publish_failure_count += 1

@@ -11,6 +11,7 @@ import contextlib
 import json
 import logging
 import time
+import typing
 from typing import TYPE_CHECKING, Any
 
 from remote_iface._commlib.serialization import serialize
@@ -20,6 +21,8 @@ from remote_iface._commlib.wrappers.subscriber import Subscriber
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    import aiomqtt
 
     from remote_iface._commlib.transport import TransportFactory
     from remote_iface._commlib.wrappers.endpoint import Endpoint
@@ -89,7 +92,8 @@ class NodeContext:
         while not self._stopped.is_set():
             tasks: list[asyncio.Task[None]] = []
             try:
-                client = self._transport_factory()
+                assert self._loop is not None, "_run() invoked before start() set self._loop"
+                client = typing.cast("aiomqtt.Client", self._transport_factory())
                 async with client:
                     self._connected = True
                     for topic in self._desired_subscriptions():

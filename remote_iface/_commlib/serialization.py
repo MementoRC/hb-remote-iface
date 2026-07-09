@@ -17,8 +17,10 @@ def serialize(message: Any) -> bytes:
     if hasattr(message, "model_dump"):
         # Pydantic v2 model
         data: Any = message.model_dump()
-    elif dataclasses.is_dataclass(message):
-        # Dataclass (handles both slots=True and slots=False)
+    elif dataclasses.is_dataclass(message) and not isinstance(message, type):
+        # Dataclass instance (handles both slots=True and slots=False). asdict() only
+        # accepts instances, not dataclass types themselves (is_dataclass() is True for
+        # both), so the isinstance(message, type) check excludes the class case.
         data = dataclasses.asdict(message)
     elif hasattr(message, "__dict__"):
         # Plain object with __dict__

@@ -63,6 +63,9 @@ class RPCService(Endpoint):
         on the event loop thread (no run_in_executor hop), so blocking in this method
         would stall the event loop. The caller attaches a completion callback instead.
         """
+        assert self._executor is not None, (
+            f"RPCService for '{self._rpc_name}' dispatched before _do_start() ran"
+        )
         return self._executor.submit(self._on_request, request)
 
     def _do_stop(self) -> None:
