@@ -1,45 +1,47 @@
-"""Thin serialize/deserialize facade over commlib's JSONSerializer.
+"""Thin serialize/deserialize facade over stdlib json.
 
-JSONSerializer.serialize() returns str (not bytes) — serializer.py:80.
-JSONSerializer.deserialize() accepts str and returns Dict[str, Any] — serializer.py:89.
-We encode/decode UTF-8 at this boundary so callers deal only with bytes.
+Replaces the commlib JSONSerializer facade (Phase 0/1 finding: commlib's own JSON
+encoding added no behavior beyond str->bytes framing that stdlib json doesn't already do).
 """
 
+import dataclasses
+import json
 from typing import Any
 
 
 def serialize(message: Any) -> bytes:
-    """Encode a message to UTF-8 bytes via commlib's JSONSerializer.
+    """Encode a message to UTF-8 JSON bytes.
 
-    Accepts a commlib msg instance, a pydantic model, or a plain dict.
-    Pydantic models are converted via model_dump() before serialization so
-    nested types (Decimal, enum, etc.) are reduced to JSON primitives by
-    JSONSerializer.make_primitives() (serializer.py:125-138).
+    Accepts a pydantic model, a dataclass (with or without slots=True), or a plain dict.
     """
-    from commlib.serializer import JSONSerializer  # commlib import boundary
-
     if hasattr(message, "model_dump"):
+        # Pydantic v2 model
         data: Any = message.model_dump()
+    elif dataclasses.is_dataclass(message) and not isinstance(message, type):
+        # Dataclass instance (handles both slots=True and slots=False). asdict() only
+        # accepts instances, not dataclass types themselves (is_dataclass() is True for
+        # both), so the isinstance(message, type) check excludes the class case.
+        data = dataclasses.asdict(message)
     elif hasattr(message, "__dict__"):
+        # Plain object with __dict__
         data = message.__dict__
     else:
+        # Assume it's already a dict or JSON-serializable primitive
         data = message
-    return JSONSerializer.serialize(data).encode("utf-8")
+    return json.dumps(data).encode("utf-8")
 
 
 def deserialize(payload: bytes, msg_type: type | None = None) -> Any:
-    """Decode UTF-8 bytes and optionally hydrate into msg_type.
+    """Decode UTF-8 JSON bytes and optionally hydrate into msg_type.
 
     Deserialize-at-edge pattern (design:132): callers receive typed objects,
     not raw dicts, so the transport boundary is the single point of type coercion.
     """
-    from commlib.serializer import JSONSerializer  # commlib import boundary
-
-    data: dict[str, Any] = JSONSerializer.deserialize(payload.decode("utf-8"))
+    data: dict[str, Any] = json.loads(payload.decode("utf-8"))
     if msg_type is None:
         return data
     # Pydantic v2 models: use model_validate for strict coercion.
     if hasattr(msg_type, "model_validate"):
         return msg_type.model_validate(data)
-    # commlib msg types and plain dataclasses: keyword-unpack.
+    # Dataclasses and plain types: keyword-unpack.
     return msg_type(**data)

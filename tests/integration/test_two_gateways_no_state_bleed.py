@@ -12,7 +12,7 @@ from __future__ import annotations
 import gc
 import logging
 import weakref
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -44,8 +44,8 @@ def _make_app(name: str) -> MagicMock:
 
 def _make_mock_node_context() -> MagicMock:
     nc = MagicMock()
-    nc.start = MagicMock()
-    nc.stop = MagicMock()
+    nc.start = AsyncMock()
+    nc.stop = AsyncMock()
     nc.is_healthy = MagicMock(return_value=True)
     mock_pub = MagicMock()
     mock_sub = MagicMock()

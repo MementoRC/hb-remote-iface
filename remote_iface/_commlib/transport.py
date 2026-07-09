@@ -1,4 +1,4 @@
-"""MQTT transport configuration and factory for the commlib private layer."""
+"""MQTT transport configuration and factory for the aiomqtt-based transport layer."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -8,45 +8,49 @@ from dataclasses import dataclass
 class TransportConfig:
     """Immutable MQTT connection configuration.
 
-    Maps 1-to-1 onto commlib.transports.mqtt.ConnectionParameters fields
-    (mqtt.py:66-73, connection.py:13-30). Frozen so configs cannot be mutated after
-    construction — the factory closure captures a snapshot of intent, not a live reference.
+    Maps 1-to-1 onto aiomqtt.Client's connect-time kwargs. Frozen so configs cannot be
+    mutated after construction — the factory closure captures a snapshot of intent.
     """
 
     host: str = "localhost"
     port: int = 1883
     username: str | None = None
     password: str | None = None
-    # MQTT protocol keepalive in seconds (commlib default: 60).
     keepalive: int = 60
-    # SSL fields forwarded from BaseConnectionParameters (connection.py:27-28).
     ssl: bool = False
+    # Not yet mapped onto aiomqtt.TLSParameters — matches upstream's own gap
+    # (hummingbot/remote_iface/mqtt.py:527 also ignores an "insecure" toggle).
     ssl_insecure: bool = False
 
 
-# A TransportFactory is a zero-argument callable that produces a commlib
-# ConnectionParameters-shaped object each time it is called.
 type TransportFactory = Callable[[], object]
 
 
 def default_mqtt_transport_factory(config: TransportConfig) -> TransportFactory:
-    """Return a callable that produces a commlib MQTT ConnectionParameters per `config`.
+    """Return a callable that produces a fresh aiomqtt.Client per `config` on each call.
 
-    Lazy import keeps commlib out of the module-load critical path and allows the factory to
-    be constructed before the pixi env is fully initialised (e.g. during config validation).
+    A fresh client per call matches upstream's _create_client() pattern
+    (hummingbot/remote_iface/mqtt.py:524-535): NodeContext's reconnect loop calls this
+    factory once per connection attempt, never reusing a client across reconnects.
+    Lazy import keeps aiomqtt out of the module-load critical path.
+
+    Note: aiomqtt.Client.__init__ calls asyncio.get_running_loop() internally, so this
+    factory (and thus the returned callable) must be invoked from within a running event
+    loop — matching the "build now, connect later via `async with`" pattern the caller
+    (NodeContext's reconnect loop) already runs inside.
     """
 
     def _factory() -> object:
-        from commlib.transports.mqtt import ConnectionParameters  # commlib import boundary
+        import aiomqtt  # aiomqtt import boundary
 
-        return ConnectionParameters(
-            host=config.host,
+        tls_params = aiomqtt.TLSParameters() if config.ssl else None
+        return aiomqtt.Client(
+            hostname=config.host,
             port=config.port,
-            username=config.username or "",
-            password=config.password or "",
+            username=config.username or None,
+            password=config.password or None,
             keepalive=config.keepalive,
-            ssl=config.ssl,
-            ssl_insecure=config.ssl_insecure,
+            tls_params=tls_params,
         )
 
     return _factory

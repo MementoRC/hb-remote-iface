@@ -107,7 +107,7 @@ class MQTTGateway:
             return
 
         # Transport MUST succeed; failure here is fatal for this start() attempt.
-        self._node_context.start()
+        await self._node_context.start()
 
         for component in self._components:
             try:
@@ -155,7 +155,7 @@ class MQTTGateway:
         self._endpoints.clear()
 
         try:
-            self._node_context.stop()
+            await self._node_context.stop()
         except Exception as exc:  # noqa: BLE001
             _logger.error("NodeContext.stop() raised: %s: %s", type(exc).__name__, exc)
 

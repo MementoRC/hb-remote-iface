@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -45,8 +45,8 @@ def _make_gateway(
 
 def _mock_node_context(healthy: bool = True) -> MagicMock:
     nc = MagicMock()
-    nc.start = MagicMock()
-    nc.stop = MagicMock()
+    nc.start = AsyncMock()
+    nc.stop = AsyncMock()
     nc.is_healthy = MagicMock(return_value=healthy)
     return nc
 
