@@ -80,3 +80,6 @@ logs/
 
 # Claude Code
 .claude/
+
+# Local MCP server config (machine-specific)
+.mcp.json
