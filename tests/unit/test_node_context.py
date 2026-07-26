@@ -169,6 +169,38 @@ async def test_subscriber_wildcard_topic_matches() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_prefers_most_specific_pattern_over_wildcard() -> None:
+    """Regression for issue #13: NodeContext._dispatch_incoming fires callbacks for
+    EVERY matching topic pattern instead of only the most specific one. When an
+    exact-topic subscriber (e.g. EEventListenerFactory's ``external/foo``) and a
+    wildcard subscriber (e.g. MQTTExternalEvents' ``external/+``) are both registered
+    on the same NodeContext, a message on ``external/foo`` must be delivered only to
+    the exact-topic subscriber — not to both, which duplicates delivery to the app
+    layer."""
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    msg = _FakeMessage("external/foo", serialize({"v": 1}))
+    fake_client = _FakeAiomqttClient(incoming=[msg])
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    exact_received: list[object] = []
+    wildcard_received: list[object] = []
+    nc.create_subscriber(topic="external/foo", on_message=exact_received.append, msg_type=None)
+    nc.create_subscriber(topic="external/+", on_message=wildcard_received.append, msg_type=None)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    await nc.stop()
+
+    assert exact_received == [{"v": 1}]
+    assert wildcard_received == [], (
+        "wildcard subscriber fired even though an exact-topic match exists — "
+        "message delivered twice (see issue #13)"
+    )
+
+
+@pytest.mark.asyncio
 async def test_subscriber_set_callback_after_start_takes_effect() -> None:
     """Regression test for the wrapper.on_message closure fix — set_callback() must work live."""
     from remote_iface._commlib.node_context import NodeContext

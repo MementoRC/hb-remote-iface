@@ -167,18 +167,25 @@ class NodeContext:
                 self._dispatch_rpc(topic, data)
                 continue
 
-            for pattern, callbacks in list(self._sub_callbacks.items()):
-                if self._topic_matches(pattern, topic):
-                    for cb in list(callbacks):
-                        try:
-                            cb(data)
-                        except Exception:  # noqa: BLE001
-                            _logger.error(
-                                "NodeContext(%r): subscriber callback raised on %r",
-                                self._node_name,
-                                topic,
-                                exc_info=True,
-                            )
+            matches = [
+                (pattern, callbacks)
+                for pattern, callbacks in self._sub_callbacks.items()
+                if self._topic_matches(pattern, topic)
+            ]
+            if matches:
+                _best_pattern, best_callbacks = max(
+                    matches, key=lambda pc: self._pattern_specificity(pc[0])
+                )
+                for cb in list(best_callbacks):
+                    try:
+                        cb(data)
+                    except Exception:  # noqa: BLE001
+                        _logger.error(
+                            "NodeContext(%r): subscriber callback raised on %r",
+                            self._node_name,
+                            topic,
+                            exc_info=True,
+                        )
 
     def _dispatch_rpc(self, topic: str, payload: dict[str, Any]) -> None:
         """Runs inline on the event loop thread — request coercion is cheap, and the
@@ -261,6 +268,16 @@ class NodeContext:
             if p != "+" and p != t_parts[i]:
                 return False
         return len(p_parts) == len(t_parts)
+
+    @staticmethod
+    def _pattern_specificity(pattern: str) -> tuple[int, int]:
+        """Higher tuple = more specific. Literal (non-wildcard) segment count is the
+        primary key; a trailing multi-level '#' wildcard ranks below patterns without
+        one, since '#' can match arbitrarily many additional segments."""
+        parts = pattern.split("/")
+        literal_count = sum(1 for p in parts if p not in ("+", "#"))
+        has_hash = "#" in parts
+        return (literal_count, 0 if has_hash else 1)
 
     def _enqueue_outgoing(self, topic: str, payload: bytes, qos: int) -> None:
         """Thread-safe enqueue — callable from the event loop thread or a worker thread
