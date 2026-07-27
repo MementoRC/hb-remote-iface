@@ -118,3 +118,41 @@ def test_dispatch_suppresses_app_exception() -> None:
     e.start(gw)
     cb = gw._node_context.create_subscriber.call_args.kwargs["on_message"]
     cb(MagicMock())  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# event_bus republish (issue #13 PR2)
+# ---------------------------------------------------------------------------
+
+
+def test_matched_message_republishes_onto_event_bus_by_exact_topic() -> None:
+    """A message delivered on an exact matched topic (e.g. external/order_filled) must be
+    republished onto the internal event_bus as "external.order_filled" (dotted, derived
+    from the actual matched topic — not the "external/+" registration pattern), in
+    addition to (not instead of) the existing app.handle_external_event() dispatch.
+    """
+    from remote_iface._commlib.node_context import NodeContext
+
+    nc = NodeContext(node_name="n1", transport_factory=lambda: None)
+    gw = MagicMock()
+    gw._config = GatewayConfig(enable_external_events=True, namespace="hb")
+    gw._app = MagicMock(spec=HummingbotAppProtocol)
+    gw._endpoints = []
+    gw._node_context = nc
+
+    e = MQTTExternalEvents()
+    e.start(gw)
+
+    received: list[object] = []
+    nc.subscribe_event("external.order_filled", received.append)
+
+    # Simulate NodeContext delivering a message on the exact matched topic under the
+    # wildcard "external/+" registration — this is the same edge callback NodeContext
+    # invokes from _dispatch_incoming() on a real MQTT message.
+    edge_callback = nc._sub_callbacks["external/+"][0]
+    raw_payload = {"timestamp": 1, "sequence": 2, "type": "order_filled", "data": {"a": 1}}
+    edge_callback(raw_payload, "external/order_filled")
+
+    gw._app.handle_external_event.assert_called_once()
+    assert len(received) == 1
+    assert received[0] is gw._app.handle_external_event.call_args.args[0]
