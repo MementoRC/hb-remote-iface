@@ -367,3 +367,10 @@ class NodeContext:
     def publish_event(self, event_type: str, payload: Any) -> None:
         """Publish ``payload`` for ``event_type`` on the internal in-process event bus."""
         self._event_bus.publish(event_type, payload)
+
+    def unsubscribe_event(self, event_type: str, handler: Callable[[Any], None]) -> None:
+        """Deregister ``handler`` for ``event_type`` from the internal in-process event bus.
+
+        Pure ``EventBusAdapter`` deregistration — does not touch ``_sub_callbacks``.
+        """
+        self._event_bus.unsubscribe(event_type, handler)
