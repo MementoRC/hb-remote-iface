@@ -332,6 +332,56 @@ async def test_rpc_reply_envelope_uses_millisecond_timestamp() -> None:
 
 
 # ---------------------------------------------------------------------------
+# In-process event bus (subscribe_event / publish_event) — issue #13 PR1
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_subscribe_event_publish_event_delivers_without_mqtt() -> None:
+    """subscribe_event()/publish_event() must work with zero MQTT messages in flight,
+    proving this path is fully independent of the MQTT dispatch loop."""
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()  # empty incoming — no MQTT traffic at all
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    received: list[object] = []
+    nc.subscribe_event("my.event", received.append)
+
+    nc.publish_event("my.event", {"payload": 1})
+
+    assert received == [{"payload": 1}]
+
+
+@pytest.mark.asyncio
+async def test_publish_event_delivers_to_multiple_independent_handlers() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    received_a: list[object] = []
+    received_b: list[object] = []
+    nc.subscribe_event("shared.event", received_a.append)
+    nc.subscribe_event("shared.event", received_b.append)
+
+    nc.publish_event("shared.event", {"v": 42})
+
+    assert received_a == [{"v": 42}]
+    assert received_b == [{"v": 42}]
+
+
+@pytest.mark.asyncio
+async def test_publish_event_with_no_subscribers_does_not_raise() -> None:
+    from remote_iface._commlib.node_context import NodeContext
+
+    fake_client = _FakeAiomqttClient()
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    nc.publish_event("no.subscribers.event", {"whatever": True})
+
+
+# ---------------------------------------------------------------------------
 # Reconnect behavior
 # ---------------------------------------------------------------------------
 

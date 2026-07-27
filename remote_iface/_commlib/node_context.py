@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from remote_iface._commlib.transport import TransportFactory
     from remote_iface._commlib.wrappers.endpoint import Endpoint
+    from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
 
 _logger = logging.getLogger("remote_iface.NodeContext")
 
@@ -45,6 +46,15 @@ class NodeContext:
         self._transport_factory: TransportFactory = transport_factory
         self._wrappers: list[Endpoint] = []
         self._started: bool = False
+
+        # Deferred import to avoid a circular import: hb_compat/__init__.py ->
+        # factory.py -> gateway/gateway.py -> _commlib.node_context (this module). A
+        # top-level `from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter`
+        # would trigger that cycle whenever this module is imported before hb_compat has
+        # finished initializing (e.g. `import remote_iface._commlib.node_context` directly).
+        from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
+
+        self._event_bus: EventBusAdapter = EventBusAdapter()
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._run_task: asyncio.Task[None] | None = None
@@ -338,3 +348,19 @@ class NodeContext:
 
     def is_healthy(self) -> bool:
         return self._connected
+
+    # ------------------------------------------------------------------
+    # In-process event bus (issue #13 PR1 — foundational, no call-site migration yet)
+    # ------------------------------------------------------------------
+
+    def subscribe_event(self, event_type: str, handler: Callable[[Any], None]) -> None:
+        """Register ``handler`` for ``event_type`` on the internal in-process event bus.
+
+        Pure ``EventBusAdapter`` registration — does not touch ``_sub_callbacks`` and
+        creates no MQTT subscription.
+        """
+        self._event_bus.subscribe(event_type, handler)
+
+    def publish_event(self, event_type: str, payload: Any) -> None:
+        """Publish ``payload`` for ``event_type`` on the internal in-process event bus."""
+        self._event_bus.publish(event_type, payload)
