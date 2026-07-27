@@ -201,6 +201,36 @@ async def test_dispatch_prefers_most_specific_pattern_over_wildcard() -> None:
 
 
 @pytest.mark.asyncio
+async def test_subscriber_last_topic_reflects_actual_incoming_topic() -> None:
+    """Regression for issue #13 PR1: a wildcard-pattern Subscriber's `.topic` only ever
+    holds the registered pattern (e.g. "t/+/data"), not the actual exact MQTT topic of
+    whatever message triggered a given callback invocation. `.last_topic` must reflect
+    the ACTUAL topic per-message, in delivery order."""
+    from remote_iface._commlib.node_context import NodeContext
+    from remote_iface._commlib.serialization import serialize
+
+    messages = [
+        _FakeMessage("t/abc/data", serialize({"i": 1})),
+        _FakeMessage("t/xyz/data", serialize({"i": 2})),
+    ]
+    fake_client = _FakeAiomqttClient(incoming=messages)
+    nc = NodeContext(node_name="n1", transport_factory=lambda: fake_client)
+
+    observed_topics: list[str | None] = []
+
+    def _on_message(_msg: object) -> None:
+        observed_topics.append(sub.last_topic)
+
+    sub = nc.create_subscriber(topic="t/+/data", on_message=_on_message, msg_type=None)
+
+    await nc.start()
+    await asyncio.sleep(0.05)
+    await nc.stop()
+
+    assert observed_topics == ["t/abc/data", "t/xyz/data"]
+
+
+@pytest.mark.asyncio
 async def test_subscriber_set_callback_after_start_takes_effect() -> None:
     """Regression test for the wrapper.on_message closure fix — set_callback() must work live."""
     from remote_iface._commlib.node_context import NodeContext

@@ -62,7 +62,7 @@ class NodeContext:
         self._connected: bool = False
         self._outgoing: asyncio.Queue[tuple[str, bytes, int]] = asyncio.Queue()
         # Pub/Sub callbacks keyed by topic pattern (supports +/# wildcards).
-        self._sub_callbacks: dict[str, list[Callable[[Any], None]]] = {}
+        self._sub_callbacks: dict[str, list[Callable[[Any, str], None]]] = {}
         # RPC handlers keyed by exact command topic.
         self._command_table: dict[str, tuple[type, Callable[[Any], Any]]] = {}
 
@@ -188,7 +188,7 @@ class NodeContext:
                 )
                 for cb in list(best_callbacks):
                     try:
-                        cb(data)
+                        cb(data, topic)
                     except Exception:  # noqa: BLE001
                         _logger.error(
                             "NodeContext(%r): subscriber callback raised on %r",
@@ -315,7 +315,7 @@ class NodeContext:
     ) -> Subscriber:
         wrapper = Subscriber(topic=topic, on_message=on_message, msg_type=msg_type)
 
-        def _edge_callback(raw: Any) -> None:
+        def _edge_callback(raw: Any, topic: str) -> None:
             if isinstance(raw, dict) and msg_type is not None:
                 msg = (
                     msg_type.model_validate(raw)
@@ -324,6 +324,9 @@ class NodeContext:
                 )
             else:
                 msg = raw
+            # Expose the ACTUAL incoming topic (distinct from wrapper.topic's registered
+            # pattern for wildcard subscribers) before invoking on_message.
+            wrapper.last_topic = topic
             # Read the wrapper's LIVE callback (not the closed-over on_message param) so
             # Subscriber.set_callback() calls after start() actually take effect.
             wrapper.on_message(msg)
