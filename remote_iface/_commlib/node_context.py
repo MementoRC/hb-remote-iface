@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from remote_iface._commlib.transport import TransportFactory
     from remote_iface._commlib.wrappers.endpoint import Endpoint
+    from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
 
 _logger = logging.getLogger("remote_iface.NodeContext")
 
@@ -46,13 +47,22 @@ class NodeContext:
         self._wrappers: list[Endpoint] = []
         self._started: bool = False
 
+        # Deferred import to avoid a circular import: hb_compat/__init__.py ->
+        # factory.py -> gateway/gateway.py -> _commlib.node_context (this module). A
+        # top-level `from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter`
+        # would trigger that cycle whenever this module is imported before hb_compat has
+        # finished initializing (e.g. `import remote_iface._commlib.node_context` directly).
+        from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
+
+        self._event_bus: EventBusAdapter = EventBusAdapter()
+
         self._loop: asyncio.AbstractEventLoop | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._stopped: asyncio.Event = asyncio.Event()
         self._connected: bool = False
         self._outgoing: asyncio.Queue[tuple[str, bytes, int]] = asyncio.Queue()
         # Pub/Sub callbacks keyed by topic pattern (supports +/# wildcards).
-        self._sub_callbacks: dict[str, list[Callable[[Any], None]]] = {}
+        self._sub_callbacks: dict[str, list[Callable[[Any, str], None]]] = {}
         # RPC handlers keyed by exact command topic.
         self._command_table: dict[str, tuple[type, Callable[[Any], Any]]] = {}
 
@@ -178,7 +188,7 @@ class NodeContext:
                 )
                 for cb in list(best_callbacks):
                     try:
-                        cb(data)
+                        cb(data, topic)
                     except Exception:  # noqa: BLE001
                         _logger.error(
                             "NodeContext(%r): subscriber callback raised on %r",
@@ -305,7 +315,7 @@ class NodeContext:
     ) -> Subscriber:
         wrapper = Subscriber(topic=topic, on_message=on_message, msg_type=msg_type)
 
-        def _edge_callback(raw: Any) -> None:
+        def _edge_callback(raw: Any, topic: str) -> None:
             if isinstance(raw, dict) and msg_type is not None:
                 msg = (
                     msg_type.model_validate(raw)
@@ -314,6 +324,9 @@ class NodeContext:
                 )
             else:
                 msg = raw
+            # Expose the ACTUAL incoming topic (distinct from wrapper.topic's registered
+            # pattern for wildcard subscribers) before invoking on_message.
+            wrapper.last_topic = topic
             # Read the wrapper's LIVE callback (not the closed-over on_message param) so
             # Subscriber.set_callback() calls after start() actually take effect.
             wrapper.on_message(msg)
@@ -338,3 +351,26 @@ class NodeContext:
 
     def is_healthy(self) -> bool:
         return self._connected
+
+    # ------------------------------------------------------------------
+    # In-process event bus (issue #13 PR1 — foundational, no call-site migration yet)
+    # ------------------------------------------------------------------
+
+    def subscribe_event(self, event_type: str, handler: Callable[[Any], None]) -> None:
+        """Register ``handler`` for ``event_type`` on the internal in-process event bus.
+
+        Pure ``EventBusAdapter`` registration — does not touch ``_sub_callbacks`` and
+        creates no MQTT subscription.
+        """
+        self._event_bus.subscribe(event_type, handler)
+
+    def publish_event(self, event_type: str, payload: Any) -> None:
+        """Publish ``payload`` for ``event_type`` on the internal in-process event bus."""
+        self._event_bus.publish(event_type, payload)
+
+    def unsubscribe_event(self, event_type: str, handler: Callable[[Any], None]) -> None:
+        """Deregister ``handler`` for ``event_type`` from the internal in-process event bus.
+
+        Pure ``EventBusAdapter`` deregistration — does not touch ``_sub_callbacks``.
+        """
+        self._event_bus.unsubscribe(event_type, handler)

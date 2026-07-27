@@ -31,10 +31,15 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 
-def _mock_gateway(namespace: str = "hbot", instance_id: str = "bot1") -> MagicMock:
+def _mock_gateway(
+    namespace: str = "hbot",
+    instance_id: str = "bot1",
+    enable_external_events: bool = True,
+) -> MagicMock:
     """Return a minimal MQTTGateway stand-in for factory tests."""
     gw = MagicMock()
     gw._config.namespace = namespace
+    gw._config.enable_external_events = enable_external_events
     gw.app.instance_id = instance_id
     gw.topic_for.side_effect = lambda topic, bot_prefix=True: (
         f"{namespace}/{instance_id}/{topic.lstrip('/')}" if bot_prefix else topic.lstrip("/")
@@ -199,18 +204,21 @@ class TestEEventQueueFactory:
 
 
 class TestEEventListenerFactory:
-    def test_create_registers_subscriber(self) -> None:
-        """create() registers a commlib subscriber via gateway._node_context."""
+    def test_create_registers_event_bus_subscription(self) -> None:
+        """create() registers via gateway._node_context.subscribe_event (event_bus), not
+        create_subscriber (no raw MQTT subscription — issue #13 PR2 migration)."""
         gw = _mock_gateway()
         EEventListenerFactory.create(gw, "myevent", _noop_clb)
-        gw._node_context.create_subscriber.assert_called_once()
+        gw._node_context.subscribe_event.assert_called_once()
+        gw._node_context.create_subscriber.assert_not_called()
 
-    def test_create_subscribes_to_external_event_topic(self) -> None:
-        """Subscriber topic is external/{event_name}."""
+    def test_create_subscribes_to_external_event_bus_key(self) -> None:
+        """event_bus key is external.{event_name} (dot-separated, matching
+        MQTTExternalEvents' republish format), not external/{event_name}."""
         gw = _mock_gateway()
         EEventListenerFactory.create(gw, "myevent", _noop_clb)
-        call_kwargs = gw._node_context.create_subscriber.call_args[1]
-        assert call_kwargs["topic"] == "external/myevent"
+        call_args = gw._node_context.subscribe_event.call_args[0]
+        assert call_args[0] == "external.myevent"
 
     def test_create_callback_receives_msg_and_event_name(self) -> None:
         """Dispatched callback receives (msg, event_name) matching upstream signature."""
@@ -221,9 +229,9 @@ class TestEEventListenerFactory:
 
         gw = _mock_gateway()
         EEventListenerFactory.create(gw, "testevent", clb)
-        # Extract the on_message callable registered with create_subscriber
-        on_message = gw._node_context.create_subscriber.call_args[1]["on_message"]
-        on_message({"data": 42})
+        # Extract the handler callable registered with subscribe_event
+        handler = gw._node_context.subscribe_event.call_args[0][1]
+        handler({"data": 42})
         assert received == [({"data": 42}, "testevent")]
 
     def test_create_callback_exception_does_not_propagate(self) -> None:
@@ -234,33 +242,129 @@ class TestEEventListenerFactory:
 
         gw = _mock_gateway()
         EEventListenerFactory.create(gw, "ev", bad_clb)
-        on_message = gw._node_context.create_subscriber.call_args[1]["on_message"]
+        handler = gw._node_context.subscribe_event.call_args[0][1]
         # Must not raise
-        on_message({"x": 1})
+        handler({"x": 1})
 
-    def test_remove_is_noop_and_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        """EEventListenerFactory.remove() is documented as a no-op due to commlib limitation.
-
-        The method MUST:
-        1. Not raise any exception.
-        2. Log a WARNING explaining the limitation.
-
-        This limitation is tracked as a follow-up gap; per-callback unsubscribe
-        requires NodeContext-level support that commlib-py 0.13.x does not expose.
-        """
+    def test_remove_unknown_callback_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """remove() for a callback that was never create()'d must not raise and must log
+        a WARNING (genuinely meaning "never registered", not "unsupported")."""
         gw = _mock_gateway()
         with caplog.at_level("WARNING", logger="remote_iface.external.events"):
             EEventListenerFactory.remove(gw, "myevent", _noop_clb)
         assert len(caplog.records) >= 1
-        assert any(
-            "unsubscribe" in r.message or "not supported" in r.message for r in caplog.records
-        )
+        assert any("no registered subscription" in r.message for r in caplog.records)
+        gw._node_context.unsubscribe_event.assert_not_called()
+
+    def test_remove_known_callback_calls_unsubscribe_event(self) -> None:
+        """remove() for a previously create()'d callback calls unsubscribe_event with the
+        exact same handler object registered at create()-time."""
+        gw = _mock_gateway()
+        EEventListenerFactory.create(gw, "ev", _noop_clb)
+        handler = gw._node_context.subscribe_event.call_args[0][1]
+
+        EEventListenerFactory.remove(gw, "ev", _noop_clb)
+
+        gw._node_context.unsubscribe_event.assert_called_once_with("external.ev", handler)
 
     def test_remove_does_not_raise(self) -> None:
         """remove() must complete without raising regardless of state."""
         gw = _mock_gateway()
         # No exception must escape
         EEventListenerFactory.remove(gw, "ev", _noop_clb)
+
+    def test_create_warns_when_enable_external_events_disabled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """create() on a gateway with enable_external_events=False must log a WARNING
+        making the silent-delivery gap loud: without MQTTExternalEvents active there is
+        no wildcard MQTT subscription/event_bus republish for this listener to ride on."""
+        gw = _mock_gateway(enable_external_events=False)
+        with caplog.at_level("WARNING", logger="remote_iface.external.events"):
+            EEventListenerFactory.create(gw, "myevent", _noop_clb)
+        assert any(
+            "enable_external_events" in r.message or "MQTTExternalEvents" in r.message
+            for r in caplog.records
+        )
+        # The event_bus subscription must still be registered as normal.
+        gw._node_context.subscribe_event.assert_called_once()
+
+    def test_create_no_warning_when_enable_external_events_enabled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """create() on a gateway with enable_external_events=True must NOT log the
+        misconfiguration warning."""
+        gw = _mock_gateway(enable_external_events=True)
+        with caplog.at_level("WARNING", logger="remote_iface.external.events"):
+            EEventListenerFactory.create(gw, "myevent", _noop_clb)
+        assert not any(
+            "enable_external_events" in r.message or "MQTTExternalEvents" in r.message
+            for r in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# EEventListenerFactory — event_bus migration (issue #13 PR2)
+#
+# EEventListenerFactory.create() must no longer open its OWN raw MQTT subscription
+# (that duplicated MQTTExternalEvents' wildcard "external/+" subscriber — the root
+# cause of issue #13). It now rides entirely on MQTTExternalEvents' existing
+# republish of inbound events onto the in-process event_bus under the
+# "external.{event_name}" key, via NodeContext.subscribe_event/unsubscribe_event.
+# ---------------------------------------------------------------------------
+
+
+class TestEEventListenerFactoryEventBusMigration:
+    @staticmethod
+    def _gateway_with_real_node_context() -> MagicMock:
+        """Gateway stand-in wrapping a REAL NodeContext so subscribe_event/publish_event/
+        unsubscribe_event exercise the actual EventBusAdapter round-trip (a MagicMock
+        _node_context can't simulate real dispatch)."""
+        from remote_iface._commlib.node_context import NodeContext
+
+        gw = MagicMock()
+        gw._node_context = NodeContext(node_name="test-node", transport_factory=MagicMock())
+        return gw
+
+    @pytest.mark.asyncio
+    async def test_create_does_not_add_raw_mqtt_subscription(self) -> None:
+        """create() must not register anything in NodeContext._sub_callbacks — proves no
+        raw MQTT subscriber is created; only an event_bus subscription is made."""
+        gw = self._gateway_with_real_node_context()
+        EEventListenerFactory.create(gw, "myevent", _noop_clb)
+        assert gw._node_context._sub_callbacks == {}
+
+    @pytest.mark.asyncio
+    async def test_publish_event_triggers_registered_callback(self) -> None:
+        """Publishing on ``external.{event_name}`` (as MQTTExternalEvents' republish does)
+        invokes the registered callback with (msg, event_name)."""
+        received: list[tuple[object, str]] = []
+
+        def clb(msg: object, event_name: str) -> None:
+            received.append((msg, event_name))
+
+        gw = self._gateway_with_real_node_context()
+        EEventListenerFactory.create(gw, "some_event", clb)
+
+        gw._node_context.publish_event("external.some_event", {"data": 1})
+
+        assert received == [({"data": 1}, "some_event")]
+
+    @pytest.mark.asyncio
+    async def test_remove_unsubscribes_from_event_bus(self) -> None:
+        """After remove(), a subsequent publish_event no longer triggers the callback."""
+        received: list[tuple[object, str]] = []
+
+        def clb(msg: object, event_name: str) -> None:
+            received.append((msg, event_name))
+
+        gw = self._gateway_with_real_node_context()
+        EEventListenerFactory.create(gw, "some_event", clb)
+        EEventListenerFactory.remove(gw, "some_event", clb)
+
+        gw._node_context.publish_event("external.some_event", {"data": 2})
+
+        assert received == []
 
 
 # ---------------------------------------------------------------------------
@@ -331,23 +435,25 @@ class TestExternalEventFactory:
         call_kwargs = gw._node_context.create_subscriber.call_args[1]
         assert call_kwargs["topic"] == "external/myevent"
 
-    def test_create_async_registers_subscriber(self) -> None:
-        """create_async() registers a commlib subscriber."""
+    def test_create_async_registers_event_bus_subscription(self) -> None:
+        """create_async() registers via subscribe_event (event_bus), not create_subscriber."""
         gw = _mock_gateway()
         ExternalEventFactory.create_async(gw, "test.a.b", _noop_clb)
-        gw._node_context.create_subscriber.assert_called_once()
+        gw._node_context.subscribe_event.assert_called_once()
+        gw._node_context.create_subscriber.assert_not_called()
 
-    def test_create_async_subscribes_to_external_topic(self) -> None:
-        """create_async() topic is external/{event_name}."""
+    def test_create_async_subscribes_to_external_event_bus_key(self) -> None:
+        """create_async() event_bus key is external.{event_name}."""
         gw = _mock_gateway()
         ExternalEventFactory.create_async(gw, "myevent", _noop_clb)
-        call_kwargs = gw._node_context.create_subscriber.call_args[1]
-        assert call_kwargs["topic"] == "external/myevent"
+        call_args = gw._node_context.subscribe_event.call_args[0]
+        assert call_args[0] == "external.myevent"
 
-    def test_remove_listener_is_noop_and_logs_warning(
+    def test_remove_listener_unknown_callback_logs_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """remove_listener() delegates to EEventListenerFactory.remove() — no-op + WARNING."""
+        """remove_listener() delegates to EEventListenerFactory.remove(); for a callback
+        never passed to create_async(), it logs a WARNING and does not raise."""
         gw = _mock_gateway()
         with caplog.at_level("WARNING", logger="remote_iface.external.events"):
             ExternalEventFactory.remove_listener(gw, "test.a.b", _noop_clb)

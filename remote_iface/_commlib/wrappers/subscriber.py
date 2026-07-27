@@ -24,12 +24,17 @@ class Subscriber(Endpoint):
     ) -> None:
         super().__init__()
         self.topic: str = topic
+        # The ACTUAL exact MQTT topic of the most recently delivered message. Only
+        # meaningful for wildcard-pattern subscribers (e.g. "external/+"), where
+        # `self.topic` holds the registered pattern rather than any real topic; for
+        # exact-topic subscribers this will just always equal `self.topic`.
+        self.last_topic: str | None = None
         self.msg_type: type | None = msg_type
         self._on_message: Callable[[object], None] = on_message
         self._nc: NodeContext | None = None
-        self._edge_callback: Callable[[Any], None] | None = None
+        self._edge_callback: Callable[[Any, str], None] | None = None
 
-    def _bind(self, node_context: NodeContext, edge_callback: Callable[[Any], None]) -> None:
+    def _bind(self, node_context: NodeContext, edge_callback: Callable[[Any, str], None]) -> None:
         """Inject the owning NodeContext and the edge callback registered for delivery."""
         self._nc = node_context
         self._edge_callback = edge_callback
