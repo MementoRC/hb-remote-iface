@@ -13,7 +13,11 @@ dependencies = [
     "commlib-py>=0.13.2,<0.14",
     "paho-mqtt>=1.6.1,<2.0",
     "aiomqtt>=2.0",
+    "hb-event-bus @ git+https://github.com/MementoRC/hb-event-bus.git@7e2538f21af739c119dd44f3934a8dc48586254c",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "remote_iface/__about__.py"
