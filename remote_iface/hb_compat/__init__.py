@@ -16,9 +16,11 @@ Typical usage::
 """
 
 from remote_iface.hb_compat.adapter import HummingbotAppAdapter
+from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
 from remote_iface.hb_compat.factory import create_gateway
 
 __all__ = [
+    "EventBusAdapter",
     "HummingbotAppAdapter",
     "create_gateway",
 ]
