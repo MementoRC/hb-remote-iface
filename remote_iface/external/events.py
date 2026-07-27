@@ -109,6 +109,18 @@ class EEventListenerFactory:
         *gateway* (i.e. ``gateway._config.enable_external_events`` is truthy). If it is
         not, no messages will be delivered here at all.
         """
+        if not gateway._config.enable_external_events:  # noqa: SLF001
+            _logger.warning(
+                "EEventListenerFactory.create(%r): gateway._config.enable_external_events "
+                "is disabled — this listener will NEVER receive any events. "
+                "EEventListenerFactory has no MQTT subscription of its own; it depends "
+                "entirely on MQTTExternalEvents' wildcard subscription + event_bus "
+                "republish, which only runs when enable_external_events is truthy. "
+                "Enable `enable_external_events` on the gateway config for "
+                "EEventListenerFactory subscribers to receive anything.",
+                event_name,
+            )
+
         event_key = f"{_EXTERNAL_TOPIC_PREFIX}.{event_name}"
 
         def _dispatch(msg: Any) -> None:

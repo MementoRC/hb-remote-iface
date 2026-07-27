@@ -31,10 +31,15 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 
-def _mock_gateway(namespace: str = "hbot", instance_id: str = "bot1") -> MagicMock:
+def _mock_gateway(
+    namespace: str = "hbot",
+    instance_id: str = "bot1",
+    enable_external_events: bool = True,
+) -> MagicMock:
     """Return a minimal MQTTGateway stand-in for factory tests."""
     gw = MagicMock()
     gw._config.namespace = namespace
+    gw._config.enable_external_events = enable_external_events
     gw.app.instance_id = instance_id
     gw.topic_for.side_effect = lambda topic, bot_prefix=True: (
         f"{namespace}/{instance_id}/{topic.lstrip('/')}" if bot_prefix else topic.lstrip("/")
@@ -267,6 +272,35 @@ class TestEEventListenerFactory:
         gw = _mock_gateway()
         # No exception must escape
         EEventListenerFactory.remove(gw, "ev", _noop_clb)
+
+    def test_create_warns_when_enable_external_events_disabled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """create() on a gateway with enable_external_events=False must log a WARNING
+        making the silent-delivery gap loud: without MQTTExternalEvents active there is
+        no wildcard MQTT subscription/event_bus republish for this listener to ride on."""
+        gw = _mock_gateway(enable_external_events=False)
+        with caplog.at_level("WARNING", logger="remote_iface.external.events"):
+            EEventListenerFactory.create(gw, "myevent", _noop_clb)
+        assert any(
+            "enable_external_events" in r.message or "MQTTExternalEvents" in r.message
+            for r in caplog.records
+        )
+        # The event_bus subscription must still be registered as normal.
+        gw._node_context.subscribe_event.assert_called_once()
+
+    def test_create_no_warning_when_enable_external_events_enabled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """create() on a gateway with enable_external_events=True must NOT log the
+        misconfiguration warning."""
+        gw = _mock_gateway(enable_external_events=True)
+        with caplog.at_level("WARNING", logger="remote_iface.external.events"):
+            EEventListenerFactory.create(gw, "myevent", _noop_clb)
+        assert not any(
+            "enable_external_events" in r.message or "MQTTExternalEvents" in r.message
+            for r in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------
