@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import logging
 from typing import TYPE_CHECKING, Any
 
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import (
     BalanceLimitCommandMessage,
     BalancePaperCommandMessage,
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from remote_iface.gateway.gateway import MQTTGateway
     from remote_iface.protocols.app import HummingbotAppProtocol
 
-_logger = logging.getLogger("remote_iface.MQTTCommands")
+_logger = get_logger("remote_iface.MQTTCommands")
 
 # Topic suffix constants (match upstream TopicSpecs.COMMANDS).
 _CMD_START = "/start"

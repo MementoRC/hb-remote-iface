@@ -8,15 +8,16 @@ Topic prefixing is delegated to gateway.topic_for() which implements the same
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from typing import TYPE_CHECKING, Any
+
+from remote_iface.hb_compat.logging_compat import get_logger
 
 if TYPE_CHECKING:
     from remote_iface._commlib.wrappers.publisher import Publisher
     from remote_iface.gateway.gateway import MQTTGateway
 
-_logger = logging.getLogger("remote_iface.external.publishers")
+_logger = get_logger("remote_iface.external.publishers")
 
 
 class ETopicPublisher:
