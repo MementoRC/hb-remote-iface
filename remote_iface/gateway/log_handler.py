@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import LogMessage
 
 if TYPE_CHECKING:
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from remote_iface.gateway.gateway import MQTTGateway
 
 _TOPIC_LOG = "/log"
+_logger = get_logger(__name__)
 
 
 class MQTTLogHandler(logging.Handler):
@@ -47,9 +49,7 @@ class MQTTLogHandler(logging.Handler):
             try:
                 self._publisher.stop()
             except Exception as exc:  # noqa: BLE001
-                logging.getLogger(__name__).debug(
-                    "MQTTLogHandler: publisher stop raised (ignored): %s", exc
-                )
+                _logger.debug("MQTTLogHandler: publisher stop raised (ignored): %s", exc)
             if self._publisher in gateway._endpoints:  # noqa: SLF001
                 gateway._endpoints.remove(self._publisher)  # noqa: SLF001
             self._publisher = None

@@ -8,18 +8,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from remote_iface._commlib.node_context import NodeContext
 from remote_iface._commlib.transport import TransportConfig, default_mqtt_transport_factory
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.app import HummingbotAppProtocol
 
 if TYPE_CHECKING:
     from remote_iface._commlib.wrappers.endpoint import Endpoint
     from remote_iface.protocols.config import BrokerConfig, GatewayConfig
 
-_logger = logging.getLogger("remote_iface.MQTTGateway")
+_logger = get_logger("remote_iface.MQTTGateway")
 
 
 @runtime_checkable

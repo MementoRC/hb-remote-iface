@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import TYPE_CHECKING
 
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import InternalEventMessage
 
 if TYPE_CHECKING:
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from remote_iface.gateway.gateway import MQTTGateway
     from remote_iface.protocols.app import HummingbotAppProtocol
 
-_logger = logging.getLogger("remote_iface.MQTTMarketEventForwarder")
+_logger = get_logger("remote_iface.MQTTMarketEventForwarder")
 
 _TOPIC_EVENTS = "/market-events"
 

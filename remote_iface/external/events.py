@@ -38,16 +38,17 @@ that callers should be aware of.
 from __future__ import annotations
 
 import functools
-import logging
 from collections import deque
 from typing import TYPE_CHECKING, Any
+
+from remote_iface.hb_compat.logging_compat import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from remote_iface.gateway.gateway import MQTTGateway
 
-_logger = logging.getLogger("remote_iface.external.events")
+_logger = get_logger("remote_iface.external.events")
 
 _EXTERNAL_TOPIC_PREFIX = "external"
 

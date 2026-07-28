@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import ExternalEventMessage
 
 if TYPE_CHECKING:
     from remote_iface._commlib.wrappers.subscriber import Subscriber
     from remote_iface.gateway.gateway import MQTTGateway
 
-_logger = logging.getLogger("remote_iface.MQTTExternalEvents")
+_logger = get_logger("remote_iface.MQTTExternalEvents")
 
 _TOPIC_EXTERNAL = "external/+"
 

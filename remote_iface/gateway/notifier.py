@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import TYPE_CHECKING
 
+from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import NotifyMessage
 
 if TYPE_CHECKING:
     from remote_iface._commlib.wrappers.publisher import Publisher
     from remote_iface.gateway.gateway import MQTTGateway
 
-_logger = logging.getLogger("remote_iface.MQTTNotifier")
+_logger = get_logger("remote_iface.MQTTNotifier")
 
 _TOPIC_NOTIFY = "/notify"
 

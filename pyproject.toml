@@ -14,6 +14,7 @@ dependencies = [
     "paho-mqtt>=1.6.1,<2.0",
     "aiomqtt>=2.0",
     "hb-event-bus @ git+https://github.com/MementoRC/hb-event-bus.git@7e2538f21af739c119dd44f3934a8dc48586254c",
+    "hb-logger @ git+https://github.com/MementoRC/hb-logger.git@06534b7708a13b4425a06dd154976db96c2c45be",
 ]
 
 [tool.hatch.metadata]

@@ -1,7 +1,8 @@
 """Abstract base class for commlib endpoint wrappers."""
 
-import logging
 from abc import ABC, abstractmethod
+
+from remote_iface.hb_compat.logging_compat import HummingbotLogger, get_logger
 
 
 class Endpoint(ABC):
@@ -16,7 +17,7 @@ class Endpoint(ABC):
     def __init__(self) -> None:
         self._started: bool = False
         # Named after the concrete subclass so log lines identify the actual wrapper type.
-        self._logger: logging.Logger = logging.getLogger(f"remote_iface.{type(self).__name__}")
+        self._logger: HummingbotLogger = get_logger(f"remote_iface.{type(self).__name__}")
 
     def start(self) -> None:
         """Start the endpoint. No-op if already started."""

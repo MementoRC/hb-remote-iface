@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
+
+from remote_iface.hb_compat.logging_compat import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
     from remote_iface._commlib.wrappers.subscriber import Subscriber
     from remote_iface.gateway.gateway import MQTTGateway
 
-_logger = logging.getLogger("remote_iface.external.listeners")
+_logger = get_logger("remote_iface.external.listeners")
 
 
 class ETopicListener:
