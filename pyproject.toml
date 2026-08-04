@@ -76,7 +76,7 @@ build = "hatchling build"
 check-commlib-isolation = "bash scripts/check_commlib_isolation.sh"
 quality = { depends-on = ["lint", "format-check"] }
 coverage = "pytest tests/ --cov=remote_iface --cov-report=term-missing"
-check = { depends-on = ["check-commlib-isolation", "quality", "typecheck", "test"] }
+check = { depends-on = ["check-commlib-isolation", "quality", "typecheck", "coverage"] }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
