@@ -63,7 +63,7 @@ class HummingbotAppAdapter:
 
     @property
     def instance_id(self) -> str:
-        return str(self._app.instance_id)  # type: ignore[no-any-return]
+        return str(self._app.instance_id)
 
     @property
     def ev_loop(self) -> asyncio.AbstractEventLoop:
@@ -79,11 +79,11 @@ class HummingbotAppAdapter:
 
     @property
     def client_config_map(self) -> object:
-        return self._app.client_config_map  # type: ignore[no-any-return]
+        return self._app.client_config_map
 
     @property
     def strategy_config_map(self) -> object:
-        return self._app.strategy_config_map  # type: ignore[no-any-return]
+        return self._app.strategy_config_map
 
     # ------------------------------------------------------------------
     # Sync methods — pure delegation
@@ -116,11 +116,11 @@ class HummingbotAppAdapter:
     def stop(self, skip_order_cancellation: bool = False) -> None:
         self._app.stop(skip_order_cancellation=skip_order_cancellation)
 
-    def history(self, days: int, verbose: bool, precision: int) -> None:
+    def history(self, days: float, verbose: bool, precision: int) -> None:
         self._app.history(days=days, verbose=verbose, precision=precision)
 
     def balance(self, mode: str, args: list[str]) -> object:
-        return self._app.balance(mode=mode, args=args)  # type: ignore[no-any-return]
+        return self._app.balance(mode=mode, args=args)
 
     # ------------------------------------------------------------------
     # Async coroutines — delegation / async wrap

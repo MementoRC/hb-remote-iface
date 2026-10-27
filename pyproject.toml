@@ -112,6 +112,13 @@ disallow_untyped_defs = true
 # once the Python 3.12 baseline transition is done.
 disable_error_code = ["type-arg"]
 
+[[tool.mypy.overrides]]
+# hb-event-bus and hb-logger do not ship a py.typed marker yet, so mypy
+# refuses to analyse them ([import-untyped]). Drop this once both packages
+# publish py.typed.
+module = ["event_bus", "logger"]
+ignore_missing_imports = true
+
 [tool.coverage.run]
 branch = true
 source_pkgs = ["remote_iface"]
