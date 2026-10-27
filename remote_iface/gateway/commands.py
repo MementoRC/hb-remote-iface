@@ -198,12 +198,12 @@ class MQTTCommands:
             strategy_cfg: dict[str, Any] = {}
             cfg_map = self._app.client_config_map
             if hasattr(cfg_map, "dict"):
-                client_cfg = cfg_map.dict()  # type: ignore[union-attr]
+                client_cfg = cfg_map.dict()
             elif isinstance(cfg_map, dict):
                 client_cfg = cfg_map
             strat_map = self._app.strategy_config_map
             if hasattr(strat_map, "dict"):
-                strategy_cfg = strat_map.dict()  # type: ignore[union-attr]
+                strategy_cfg = strat_map.dict()
             elif isinstance(strat_map, dict):
                 strategy_cfg = strat_map
             response.config = {"client": client_cfg, "strategy": strategy_cfg}

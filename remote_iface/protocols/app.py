@@ -98,7 +98,7 @@ class HummingbotAppProtocol(Protocol):
         """Stop the running strategy."""
         ...
 
-    def history(self, days: int, verbose: bool, precision: int) -> None:
+    def history(self, days: float, verbose: bool, precision: int) -> None:
         """Print trade history for the given number of past days."""
         ...
 
