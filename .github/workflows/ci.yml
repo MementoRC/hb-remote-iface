@@ -27,6 +27,7 @@ jobs:
     secrets: inherit
     with:
       pixi-environment: "ci"
+      codeql: true
       python-versions: '["3.12"]'
       os-matrix: '["ubuntu-latest"]'
       enable-performance: false
