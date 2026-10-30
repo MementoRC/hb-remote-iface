@@ -78,7 +78,7 @@ check-aiomqtt-isolation = "bash scripts/check_aiomqtt_isolation.sh"
 check-conda-first = "python scripts/check_conda_first.py"
 quality = { depends-on = ["check-conda-first", "lint", "format-check", "typecheck"] }
 coverage = "pytest tests/ --cov=remote_iface --cov-report=term-missing"
-check = { depends-on = ["check-conda-first", "check-aiomqtt-isolation","quality", "typecheck", "coverage"] }
+check = { depends-on = ["check-conda-first", "check-aiomqtt-isolation", "quality", "typecheck", "coverage"] }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
