@@ -36,8 +36,8 @@ jobs:
       package-path: "."
       allowed-licenses: "MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, PSF-2.0, LGPL-3.0"
 
-  commlib-isolation:
-    name: "Verify commlib Isolation"
+  aiomqtt-isolation:
+    name: "Verify aiomqtt Isolation"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,8 +46,8 @@ jobs:
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.9.4
         with:
           environments: ci
-      - name: Verify commlib isolation
-        run: bash scripts/check_commlib_isolation.sh
+      - name: Verify aiomqtt isolation
+        run: bash scripts/check_aiomqtt_isolation.sh
 
   branch-policy:
     name: "Branch Policy"
