@@ -1,7 +1,8 @@
-"""Private commlib wrapper layer.
+"""Private MQTT transport layer (historically a commlib wrapper, now aiomqtt-based).
 
-The ONLY place in remote_iface that imports commlib.*. External code must depend on this
-layer's public API, never on commlib directly.
+Within this package, only transport.py and node_context.py import aiomqtt (enforced by
+scripts/check_aiomqtt_isolation.sh). External code must depend on this layer's public API,
+never on aiomqtt directly.
 """
 
 from remote_iface._commlib.node_context import NodeContext
