@@ -15,14 +15,14 @@ if TYPE_CHECKING:
 # Type aliases
 # ---------------------------------------------------------------------------
 
+#: Callable invoked on market events: ``(event_tag, pubsub_obj, event_obj)``.
 MarketEventCallback = Callable[[int, object, object], None]
-"""Callable invoked on market events: ``(event_tag, pubsub_obj, event_obj)``."""
 
+#: Callable invoked on status updates: ``(status_text, msg_type)``.
 StatusListener = Callable[[str, str], None]
-"""Callable invoked on status updates: ``(status_text, msg_type)``."""
 
+#: Zero-arg callable returned by subscription helpers to cancel a subscription.
 UnsubscribeCallable = Callable[[], None]
-"""Zero-arg callable returned by subscription helpers to cancel a subscription."""
 
 
 @runtime_checkable
