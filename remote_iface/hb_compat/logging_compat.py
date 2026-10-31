@@ -17,6 +17,7 @@ imported at least once.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from logger import NETWORK, HummingbotLogger
 
@@ -30,4 +31,6 @@ def get_logger(name: str) -> HummingbotLogger:
     ``HummingbotLogger`` because importing this module registers hb-logger's
     ``HummingbotLogger`` as the process-wide logger class.
     """
-    return logging.getLogger(name)
+    # hb-logger registers HummingbotLogger via logging.setLoggerClass at import
+    # time; typeshed still types getLogger() as returning logging.Logger.
+    return cast("HummingbotLogger", logging.getLogger(name))

@@ -11,8 +11,8 @@ license = {text = "Apache-2.0"}
 dependencies = [
     "pydantic>=2",
     "aiomqtt>=2.5,<3",
-    "hb-event-bus @ git+https://github.com/MementoRC/hb-event-bus.git@v0.1.0",
-    "hb-logger @ git+https://github.com/MementoRC/hb-logger.git@v0.1.0",
+    "hb-event-bus @ git+https://github.com/MementoRC/hb-event-bus.git@v0.2.0",
+    "hb-logger @ git+https://github.com/MementoRC/hb-logger.git@v0.2.0",
 ]
 
 [tool.hatch.metadata]
@@ -113,13 +113,6 @@ disallow_untyped_defs = true
 # Suppress [type-arg] globally; a dedicated annotation cleanup pass will follow
 # once the Python 3.12 baseline transition is done.
 disable_error_code = ["type-arg"]
-
-[[tool.mypy.overrides]]
-# hb-event-bus and hb-logger do not ship a py.typed marker yet, so mypy
-# refuses to analyse them ([import-untyped]). Drop this once both packages
-# publish py.typed.
-module = ["event_bus", "logger"]
-ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true
