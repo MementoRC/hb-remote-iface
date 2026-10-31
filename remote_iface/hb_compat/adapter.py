@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     )
     from remote_iface.protocols.notifier import NotifierProtocol
 
+#: Callback type for external MQTT events dispatched via handle_external_event.
 ExternalEventCallback = Callable[[object], None]
-"""Callback type for external MQTT events dispatched via handle_external_event."""
 
 
 class HummingbotAppAdapter:
