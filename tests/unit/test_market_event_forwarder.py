@@ -168,3 +168,53 @@ def test_forward_event_publishes_message() -> None:
 def test_forward_event_noop_when_no_publisher() -> None:
     f = MQTTMarketEventForwarder()
     f._forward_event(1, "a", "b")  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# subscribe_now()
+# ---------------------------------------------------------------------------
+
+
+def test_subscribe_now_subscribes_immediately() -> None:
+    gw = _make_gateway()
+    f = MQTTMarketEventForwarder()
+    f.start(gw)
+    f.subscribe_now(gw._app)
+    gw._app.subscribe_market_events.assert_called_once_with(f._forward_event)
+
+
+def test_subscribe_now_then_callback_subscribes_once() -> None:
+    gw = _make_gateway()
+    f = MQTTMarketEventForwarder()
+    f.start(gw)
+    f.subscribe_now(gw._app)
+    f.subscribe_now(gw._app)
+    gw._app.register_strategy_loaded_callback.call_args.args[0]()
+    assert gw._app.subscribe_market_events.call_count == 1
+
+
+def test_callback_then_subscribe_now_subscribes_once() -> None:
+    gw = _make_gateway()
+    f = MQTTMarketEventForwarder()
+    f.start(gw)
+    gw._app.register_strategy_loaded_callback.call_args.args[0]()
+    f.subscribe_now(gw._app)
+    assert gw._app.subscribe_market_events.call_count == 1
+
+
+def test_subscribe_now_noop_when_not_started() -> None:
+    gw = _make_gateway()
+    f = MQTTMarketEventForwarder()
+    f.subscribe_now(gw._app)
+    gw._app.subscribe_market_events.assert_not_called()
+
+
+def test_stop_resets_subscribed_flag() -> None:
+    gw = _make_gateway()
+    f = MQTTMarketEventForwarder()
+    f.start(gw)
+    f.subscribe_now(gw._app)
+    f.stop(gw)
+    f.start(gw)
+    f.subscribe_now(gw._app)
+    assert gw._app.subscribe_market_events.call_count == 2

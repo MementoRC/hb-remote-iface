@@ -9,6 +9,8 @@ from remote_iface.hb_compat.logging_compat import get_logger
 from remote_iface.protocols.messages import LogMessage
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from remote_iface._commlib.wrappers.publisher import Publisher
     from remote_iface.gateway.gateway import MQTTGateway
 
@@ -27,6 +29,7 @@ class MQTTLogHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__()
         self._publisher: Publisher | None = None
+        self._attached: set[str] = set()
 
     # ------------------------------------------------------------------
     # Component protocol
@@ -43,8 +46,11 @@ class MQTTLogHandler(logging.Handler):
         logging.getLogger().addHandler(self)
 
     def stop(self, gateway: MQTTGateway) -> None:
-        """Remove from root logger and stop Publisher."""
+        """Remove from root and all attached loggers, and stop Publisher."""
         logging.getLogger().removeHandler(self)
+        for name in self._attached:
+            logging.getLogger(name).removeHandler(self)
+        self._attached.clear()
         if self._publisher is not None:
             try:
                 self._publisher.stop()
@@ -53,6 +59,20 @@ class MQTTLogHandler(logging.Handler):
             if self._publisher in gateway._endpoints:  # noqa: SLF001
                 gateway._endpoints.remove(self._publisher)  # noqa: SLF001
             self._publisher = None
+
+    def attach(self, logger_names: Iterable[str]) -> None:
+        """Idempotently attach this handler to the named loggers.
+
+        Each logger gets ``removeHandler(self)`` then ``addHandler(self)``, so repeated
+        calls never duplicate the handler. Names are recorded and detached by stop().
+        Allowed before start(): the handler is attached but emit() drops records until
+        a publisher exists (start() with enable_log_handler).
+        """
+        for name in logger_names:
+            target = logging.getLogger(name)
+            target.removeHandler(self)
+            target.addHandler(self)
+            self._attached.add(name)
 
     # ------------------------------------------------------------------
     # logging.Handler

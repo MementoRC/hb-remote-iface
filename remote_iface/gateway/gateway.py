@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from remote_iface._commlib.node_context import NodeContext
 from remote_iface._commlib.transport import TransportConfig, default_mqtt_transport_factory
@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from remote_iface.protocols.config import BrokerConfig, GatewayConfig
 
 _logger = get_logger("remote_iface.MQTTGateway")
+
+_T = TypeVar("_T")
 
 
 @runtime_checkable
@@ -218,6 +220,22 @@ class MQTTGateway:
     def is_running(self) -> bool:
         """Return True if the gateway has been started and not yet stopped."""
         return self._running
+
+    @property
+    def health(self) -> bool:
+        """Sync health flag: True while running and the transport is connected.
+
+        Mirrors the in-tree ``MQTTGateway.health`` property, which hosts poll
+        with ``asyncio.sleep``. Use ``is_healthy()`` from async code.
+        """
+        return self._running and self._node_context.is_healthy()
+
+    def get_component(self, cls: type[_T]) -> _T | None:
+        """Return the first registered component that is an instance of ``cls``, or None."""
+        for component in self._components:
+            if isinstance(component, cls):
+                return component
+        return None
 
     async def is_healthy(self) -> bool:
         """Delegate health check to the underlying NodeContext."""

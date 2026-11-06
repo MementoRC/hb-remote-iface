@@ -159,3 +159,43 @@ def test_emit_noop_when_no_publisher() -> None:
     h = MQTTLogHandler()
     record = _make_record()
     h.emit(record)  # publisher is None — must not raise
+
+
+# ---------------------------------------------------------------------------
+# attach()
+# ---------------------------------------------------------------------------
+
+
+def test_attach_is_idempotent() -> None:
+    gw = _make_gateway()
+    h = MQTTLogHandler()
+    target = logging.getLogger("remote_iface.test.attach_idem")
+    try:
+        h.start(gw)
+        h.attach(["remote_iface.test.attach_idem"])
+        h.attach(["remote_iface.test.attach_idem"])
+        assert target.handlers.count(h) == 1
+    finally:
+        h.stop(gw)
+
+
+def test_stop_detaches_attached_loggers() -> None:
+    gw = _make_gateway()
+    h = MQTTLogHandler()
+    target = logging.getLogger("remote_iface.test.attach_stop")
+    h.start(gw)
+    h.attach(["remote_iface.test.attach_stop"])
+    h.stop(gw)
+    assert h not in target.handlers
+    assert h._attached == set()
+
+
+def test_attach_before_start_only_records_and_attaches() -> None:
+    h = MQTTLogHandler()
+    target = logging.getLogger("remote_iface.test.attach_early")
+    h.attach(["remote_iface.test.attach_early"])
+    try:
+        assert target.handlers.count(h) == 1
+        h.emit(_make_record())  # no publisher — must not raise
+    finally:
+        target.removeHandler(h)
