@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from remote_iface.gateway.log_handler import MQTTLogHandler
 from remote_iface.gateway.market_events import MQTTMarketEventForwarder
@@ -31,6 +31,8 @@ _logger = get_logger(__name__)
 class MQTTGateway:
     """Sync, in-tree-shaped facade over the core ``MQTTGateway``."""
 
+    _instance: ClassVar[MQTTGateway | None] = None
+
     def __init__(
         self,
         hb_app: Any,
@@ -42,6 +44,16 @@ class MQTTGateway:
         self._gateway: CoreMQTTGateway = create_gateway(hb_app, config, broker_config)
         self._start_task: asyncio.Future[None] | None = None
         self._stop_task: asyncio.Future[None] | None = None
+        MQTTGateway._instance = self
+
+    @classmethod
+    def main(cls) -> MQTTGateway | None:
+        """Return the most recently constructed gateway, or None if none exists.
+
+        Mirrors in-tree ``MQTTGateway.main()``: last-constructed wins and the
+        reference is never cleared, not even by ``stop()``.
+        """
+        return cls._instance
 
     @property
     def gateway(self) -> CoreMQTTGateway:
