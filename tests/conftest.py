@@ -9,3 +9,13 @@ from pathlib import Path
 _PKG_ROOT = Path(__file__).resolve().parent.parent
 if str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_compat_gateway_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the in-tree-style ``MQTTGateway._instance`` singleton from leaking between tests."""
+    from remote_iface.hb_compat.mqtt_gateway import MQTTGateway
+
+    monkeypatch.setattr(MQTTGateway, "_instance", None, raising=False)

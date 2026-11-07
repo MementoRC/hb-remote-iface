@@ -57,6 +57,30 @@ def test_compat_class_distinct_from_core() -> None:
 
 
 # ---------------------------------------------------------------------------
+# main() singleton accessor (in-tree contract)
+# ---------------------------------------------------------------------------
+
+
+def test_main_is_none_before_any_construction() -> None:
+    assert MQTTGateway.main() is None
+
+
+def test_main_returns_last_constructed_gateway() -> None:
+    first = MQTTGateway(_make_app())
+    assert MQTTGateway.main() is first
+    second = MQTTGateway(_make_app())
+    assert MQTTGateway.main() is second
+
+
+async def test_main_survives_stop() -> None:
+    gw, _ = _make_compat(asyncio.get_running_loop())
+    await gw.gateway.start()
+    gw.stop()
+    await gw._stop_task
+    assert MQTTGateway.main() is gw
+
+
+# ---------------------------------------------------------------------------
 # health
 # ---------------------------------------------------------------------------
 
