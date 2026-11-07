@@ -19,12 +19,14 @@ from remote_iface.hb_compat.adapter import HummingbotAppAdapter
 from remote_iface.hb_compat.event_bus_adapter import EventBusAdapter
 from remote_iface.hb_compat.factory import create_gateway
 from remote_iface.hb_compat.logging_compat import NETWORK, HummingbotLogger, get_logger
+from remote_iface.hb_compat.mqtt_gateway import MQTTGateway
 
 __all__ = [
     "NETWORK",
     "EventBusAdapter",
     "HummingbotAppAdapter",
     "HummingbotLogger",
+    "MQTTGateway",
     "create_gateway",
     "get_logger",
 ]

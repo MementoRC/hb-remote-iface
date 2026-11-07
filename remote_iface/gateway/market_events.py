@@ -34,6 +34,7 @@ class MQTTMarketEventForwarder:
     def __init__(self) -> None:
         self._publisher: Publisher | None = None
         self._unsubscribe: Callable[[], None] | None = None
+        self._subscribed: bool = False
 
     # ------------------------------------------------------------------
     # Component protocol
@@ -66,6 +67,7 @@ class MQTTMarketEventForwarder:
             except Exception as exc:  # noqa: BLE001
                 _logger.debug("MQTTMarketEventForwarder: unsubscribe raised (ignored): %s", exc)
             self._unsubscribe = None
+        self._subscribed = False
         if self._publisher is not None:
             try:
                 self._publisher.stop()
@@ -75,6 +77,23 @@ class MQTTMarketEventForwarder:
                 gateway._endpoints.remove(self._publisher)  # noqa: SLF001
             self._publisher = None
 
+    def subscribe_now(self, app: HummingbotAppProtocol) -> None:
+        """Subscribe to market events immediately; idempotent.
+
+        Shares the ``_subscribed`` guard with the strategy-loaded callback so the two
+        paths never double-subscribe. No-op (debug log) if the forwarder is not started.
+        """
+        if self._publisher is None:
+            _logger.debug("MQTTMarketEventForwarder: subscribe_now ignored — not started")
+            return
+        if self._subscribed:
+            return
+        try:
+            self._unsubscribe = app.subscribe_market_events(self._forward_event)
+            self._subscribed = True
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("MQTTMarketEventForwarder: subscribe_market_events raised: %s", exc)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -83,12 +102,7 @@ class MQTTMarketEventForwarder:
         """Return a closure that subscribes to market events when the strategy loads."""
 
         def _on_strategy_loaded() -> None:
-            if self._publisher is None:
-                return
-            try:
-                self._unsubscribe = app.subscribe_market_events(self._forward_event)
-            except Exception as exc:  # noqa: BLE001
-                _logger.warning("MQTTMarketEventForwarder: subscribe_market_events raised: %s", exc)
+            self.subscribe_now(app)
 
         return _on_strategy_loaded
 

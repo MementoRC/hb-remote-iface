@@ -149,6 +149,38 @@ async def test_stop_clears_running_flag() -> None:
     assert gw.is_running() is False
 
 
+async def test_health_property_lifecycle() -> None:
+    gw, _ = _make_gateway()
+    gw._node_context = _mock_node_context(healthy=True)
+    assert gw.health is False
+    await gw.start()
+    assert gw.health is True
+    gw._node_context.is_healthy.return_value = False
+    assert gw.health is False
+    gw._node_context.is_healthy.return_value = True
+    await gw.stop()
+    assert gw.health is False
+
+
+class _CompA:
+    def start(self, gateway: MQTTGateway) -> None: ...
+    def stop(self, gateway: MQTTGateway) -> None: ...
+
+
+class _CompB(_CompA):
+    pass
+
+
+def test_get_component_returns_first_instance_or_none() -> None:
+    gw, _ = _make_gateway()
+    a, b = _CompA(), _CompB()
+    gw.add_component(a)
+    gw.add_component(b)
+    assert gw.get_component(_CompA) is a
+    assert gw.get_component(_CompB) is b
+    assert gw.get_component(int) is None
+
+
 # ---------------------------------------------------------------------------
 # Component lifecycle tests
 # ---------------------------------------------------------------------------
