@@ -46,6 +46,9 @@ ruff = "=0.17.2"
 mypy = ">=1.5.1"
 import-linter = ">=2.0"
 pre-commit = ">=2.15.0"
+bandit = ">=1.8.0"
+pip-audit = "*"
+filelock = "*"
 
 [tool.pixi.feature.ci.dependencies]
 ruff = "=0.17.2"
@@ -55,6 +58,8 @@ pytest = ">=9.0.3"
 pytest-cov = ">=7.1.0"
 pytest-timeout = ">=2.2.0"
 bandit = ">=1.8.0"
+pip-audit = "*"
+filelock = "*"
 pre-commit = ">=2.15.0"
 hatchling = ">=1.18"
 
@@ -79,7 +84,9 @@ build = "hatchling build"
 check-aiomqtt-isolation = "bash scripts/check_aiomqtt_isolation.sh"
 check-conda-first = "python scripts/check_conda_first.py"
 lint-boundaries = "lint-imports"
-quality = { depends-on = ["check-conda-first", "lint", "format-check", "typecheck", "lint-boundaries"] }
+bandit-security = "bandit -c pyproject.toml -r remote_iface --severity-level medium --confidence-level medium"
+safety-check = "pip-audit --skip-editable"
+quality = { depends-on = ["check-conda-first", "lint", "format-check", "typecheck", "lint-boundaries", "bandit-security"] }
 coverage = "pytest tests/ --cov=remote_iface --cov-report=term-missing"
 check = { depends-on = ["check-conda-first", "check-aiomqtt-isolation", "quality", "typecheck", "coverage"] }
 
@@ -126,6 +133,9 @@ disallow_untyped_defs = true
 # Suppress [type-arg] globally; a dedicated annotation cleanup pass will follow
 # once the Python 3.12 baseline transition is done.
 disable_error_code = ["type-arg"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".pixi", ".worktrees"]
 
 [tool.coverage.run]
 branch = true
